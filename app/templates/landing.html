@@ -1,0 +1,171 @@
+{% extends "base.html" %}
+{% block title %}Vitae — Every role, scored against your CV{% endblock %}
+{% block shell_class %}shell--marketing{% endblock %}
+{% block content %}
+<section class="landing-hero">
+  <div class="hero-copy">
+    <p class="hero-brand">V<em>itae</em></p>
+    <h1>Every role on the board, scored against your CV.</h1>
+    <p class="lede">Upload once. See what fits and why — then apply with a CV tailored to the role.</p>
+    <div class="hero-ctas">
+      <a class="btn btn-primary" href="/register">Create free account</a>
+      <a class="btn" href="/login">Sign in</a>
+    </div>
+    <p class="hero-note">Free to browse · no card required</p>
+  </div>
+
+  <div class="hero-visual">
+    <div class="hero-mock" id="heroMock" aria-hidden="true">
+      <div class="mock-head">
+        <span class="mock-label">Matches · ≥65%</span>
+      </div>
+      <div class="mock-row">
+        <span class="score" data-count="87">87%</span>
+        <div class="mock-lines">
+          <strong>Marketing Executive</strong>
+          <span class="meta">FMCG · Hybrid — Lagos</span>
+          <span class="badge cv_ready">cv_ready</span>
+        </div>
+      </div>
+      <div class="mock-row">
+        <span class="score" data-count="74">74%</span>
+        <div class="mock-lines">
+          <strong>Customer Service Representative</strong>
+          <span class="meta">Remote</span>
+          <span class="badge new">new</span>
+        </div>
+      </div>
+      <div class="mock-breakdown">
+        <p class="mock-label">Why 87%</p>
+        <ul class="match-delta">
+          <li><span class="delta up">+18</span> 6 of 7 required skills on your CV</li>
+          <li><span class="delta up">+9</span> Seniority matches your experience</li>
+          <li><span class="delta down">-4</span> One requirement isn't on your CV</li>
+        </ul>
+        <p class="mock-pack"><span class="mock-label">Apply pack</span> Tailored CV · Cover note · Form answers</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="landing-section" aria-labelledby="how-heading">
+  <h2 class="section-title" id="how-heading">How it works</h2>
+  <p class="section-lead">Three steps from CV to apply pack — no busywork.</p>
+  <div class="how-grid">
+    <div class="how-step">
+      <p class="how-num">01</p>
+      <h3>Upload your CV</h3>
+      <p>We parse PDF or DOCX into a profile you confirm in short steps.</p>
+    </div>
+    <div class="how-step">
+      <p class="how-num">02</p>
+      <h3>See scored roles</h3>
+      <p>Every listing is ranked against your skills, with clear reasons.</p>
+    </div>
+    <div class="how-step">
+      <p class="how-num">03</p>
+      <h3>Apply with a pack</h3>
+      <p>Open a match for a tailored CV, cover note, and copy-ready answers.</p>
+    </div>
+  </div>
+</section>
+
+<section class="landing-section is-soft" aria-labelledby="pricing-heading"
+  data-pricing
+  data-region="{{ region }}"
+  data-region-source="{{ region_source }}"
+  data-byok-ng="{{ prices.byok_ng }}"
+  data-platform-ng="{{ prices.platform_ng }}"
+  data-byok-intl="{{ prices.byok_intl }}"
+  data-platform-intl="{{ prices.platform_intl }}"
+>
+  <h2 class="section-title" id="pricing-heading">Pricing</h2>
+  <p class="pricing-note">Free for scored jobs and apply workspaces. AI tailored CVs and rewrites are optional monthly plans — skip anytime.</p>
+  <div class="billing-plans">
+    <div class="plan-card">
+      <h3>Bring your own AI key</h3>
+      <p class="meta" style="margin:0">Use your OpenAI, Anthropic, or Gemini key. Cancel anytime.</p>
+      <p class="plan-price"><span data-price="byok">{{ prices.byok }}</span> <small>/ month</small></p>
+      <div class="actions">
+        <a class="btn" href="/register">Get started</a>
+      </div>
+    </div>
+    <div class="plan-card is-featured">
+      <h3>Platform AI</h3>
+      <p class="meta" style="margin:0">We run the AI for you — nothing to configure. Cancel anytime.</p>
+      <p class="plan-price"><span data-price="platform">{{ prices.platform }}</span> <small>/ month</small></p>
+      <div class="actions">
+        <a class="btn btn-primary" href="/register">Get started</a>
+      </div>
+    </div>
+  </div>
+</section>
+{% endblock %}
+
+{% block footer %}
+<footer class="site-footer">
+  <span>Vitae — personal job matching</span>
+  <div class="footer-links">
+    <a href="/login">Sign in</a>
+    <a href="/register">Register</a>
+  </div>
+</footer>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  var pricing = document.querySelector("[data-pricing]");
+  if (pricing && pricing.dataset.regionSource === "default") {
+    var langs = navigator.languages || [navigator.language || ""];
+    var tz = "";
+    try { tz = Intl.DateTimeFormat().resolvedOptions().timeZone || ""; } catch (e) {}
+    var isNg = tz === "Africa/Lagos" || langs.some(function (l) {
+      var t = String(l || "").toLowerCase().replace("_", "-");
+      return t === "ng" || t.slice(-3) === "-ng";
+    });
+    var byok = pricing.getAttribute("data-byok-" + (isNg ? "ng" : "intl"));
+    var platform = pricing.getAttribute("data-platform-" + (isNg ? "ng" : "intl"));
+    var byokEl = pricing.querySelector('[data-price="byok"]');
+    var platformEl = pricing.querySelector('[data-price="platform"]');
+    if (byokEl && byok) byokEl.textContent = byok;
+    if (platformEl && platform) platformEl.textContent = platform;
+  }
+
+  var mock = document.getElementById("heroMock");
+  if (!mock) return;
+  if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+
+  var scores = mock.querySelectorAll("[data-count]");
+  var reveals = mock.querySelectorAll(".match-delta li, .mock-pack");
+  var ease = "cubic-bezier(.16,1,.3,1)";
+
+  reveals.forEach(function (el) {
+    el.style.opacity = "0";
+    el.style.transform = "translateY(6px)";
+  });
+  scores.forEach(function (el) { el.textContent = "0%"; });
+
+  scores.forEach(function (el, i) {
+    var target = parseInt(el.dataset.count, 10);
+    setTimeout(function () {
+      var start;
+      requestAnimationFrame(function tick(t) {
+        if (!start) start = t;
+        var p = Math.min((t - start) / 900, 1);
+        el.textContent = Math.round(target * (1 - Math.pow(1 - p, 3))) + "%";
+        if (p < 1) requestAnimationFrame(tick);
+      });
+    }, 250 + i * 150);
+  });
+
+  reveals.forEach(function (el, i) {
+    setTimeout(function () {
+      el.style.transition = "opacity .5s " + ease + ", transform .5s " + ease;
+      el.style.opacity = "1";
+      el.style.transform = "none";
+    }, 650 + i * 150);
+  });
+})();
+</script>
+{% endblock %}

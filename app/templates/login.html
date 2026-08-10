@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block title %}Login · Vitae{% endblock %}
+{% block shell_class %}shell--marketing{% endblock %}
+{% block content %}
+<div class="auth-split auth-split--login">
+  <div class="panel auth-panel">
+    <a class="wordmark-lg" href="/">V<em>itae</em></a>
+    <h1>Sign in</h1>
+    <p class="meta">Email and password, Google, or GitHub — same email is the same account.</p>
+    {% if error %}
+      <div class="error">{{ error }}</div>
+    {% endif %}
+    <form method="post" action="/login" class="form-grid" style="margin-top:var(--s4)">
+      <input type="hidden" name="next" value="{{ next or '/' }}" />
+      <label style="grid-column:1/-1">Email<input type="email" name="email" required autocomplete="email" /></label>
+      <label style="grid-column:1/-1">Password<input type="password" name="password" required autocomplete="current-password" /></label>
+      <div><button class="btn btn-primary" type="submit">Sign in</button></div>
+    </form>
+    <p class="divider">Or continue with</p>
+    <div class="oauth-row">
+      <a class="btn" href="/auth/google/authorize">Google</a>
+      <a class="btn" href="/auth/github/authorize">GitHub</a>
+    </div>
+    <p class="meta" style="margin-top:var(--s5)">No account? <a href="/register">Create one</a></p>
+  </div>
+
+  <aside class="panel auth-value">
+    <p class="eyebrow">One account</p>
+    <h2>Link once, sign in any way.</h2>
+    <p class="meta" style="margin:0">Register with email, then use Google or GitHub with that same address — or start with social and keep going.</p>
+  </aside>
+</div>
+{% endblock %}
+{% block footer %}<footer class="site-footer"><span>Vitae — personal job matching</span></footer>{% endblock %}

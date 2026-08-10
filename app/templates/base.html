@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{% block title %}Vitae{% endblock %}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,500;0,9..144,650;1,9..144,500&family=Source+Sans+3:wght@400;550;650&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <div id="working" class="working-banner" aria-live="polite">
+    <div class="card">Working… please wait</div>
+  </div>
+
+  <header class="site-header" id="siteHeader">
+    <div class="site-header-inner">
+      <a class="wordmark" href="/">V<em>itae</em></a>
+      <nav class="nav" aria-label="Primary">
+        {% if user %}
+          {% if profile_ready %}<a href="/">Jobs</a>{% endif %}
+          <a href="/profiles">Profiles{% if active_profile %} · {{ active_profile.label }}{% endif %}</a>
+          <a href="/billing">Billing</a>
+          {% if profile_ready %}<a href="/settings">Settings</a>{% else %}<a href="/onboarding">Onboarding</a>{% endif %}
+          {% if is_admin %}<a href="/admin">Admin</a>{% endif %}
+          <form action="/logout" method="post" class="nav-logout">
+            <button class="btn btn-ghost" type="submit">Log out</button>
+          </form>
+        {% else %}
+          <a href="/login">Sign in</a>
+          <a class="btn btn-primary" href="/register">Get started</a>
+        {% endif %}
+      </nav>
+    </div>
+  </header>
+
+  <div class="shell {% block shell_class %}{% if user %}shell--app{% else %}shell--marketing{% endif %}{% endblock %}">
+    {% if flash %}
+      <div class="flash">{{ flash }}</div>
+    {% endif %}
+
+    {% block content %}{% endblock %}
+
+    {% block footer %}
+    <footer class="site-footer">
+      <span>Vitae — personal job matching</span>
+      {% if not user %}
+      <div class="footer-links">
+        <a href="/login">Sign in</a>
+        <a href="/register">Register</a>
+      </div>
+      {% endif %}
+    </footer>
+    {% endblock %}
+  </div>
+
+  <script>
+    (function () {
+      const banner = document.getElementById("working");
+      const header = document.getElementById("siteHeader");
+      function busy(on) {
+        if (!banner) return;
+        banner.classList.toggle("show", !!on);
+        document.querySelectorAll("form[data-busy] button, form[data-busy] .btn").forEach((el) => {
+          el.disabled = !!on;
+        });
+      }
+      document.querySelectorAll("form[data-busy]").forEach((form) => {
+        form.addEventListener("submit", () => busy(true));
+      });
+      if (header) {
+        const onScroll = () => header.classList.toggle("is-scrolled", window.scrollY > 4);
+        onScroll();
+        window.addEventListener("scroll", onScroll, { passive: true });
+      }
+      window.copyField = async function (btn, text) {
+        try {
+          await navigator.clipboard.writeText(text || "");
+          const old = btn.textContent;
+          btn.textContent = "Copied";
+          setTimeout(() => { btn.textContent = old; }, 1200);
+        } catch (e) {
+          alert("Copy failed. Select the text manually.");
+        }
+      };
+    })();
+  </script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

@@ -1,0 +1,127 @@
+from __future__ import annotations
+
+from functools import lru_cache
+from pathlib import Path
+from typing import Any
+
+import yaml
+from dotenv import load_dotenv
+from pydantic_settings import BaseSettings
+
+ROOT_DIR = Path(__file__).resolve().parent.parent
+load_dotenv(ROOT_DIR / ".env")
+
+
+class Settings(BaseSettings):
+    adzuna_app_id: str = ""
+    adzuna_app_key: str = ""
+    jooble_api_key: str = ""
+    openai_api_key: str = ""
+    openai_model: str = "gpt-4o-mini"
+    gemini_api_key: str = ""
+    gemini_model: str = "gemini-2.0-flash"
+    # Platform only: openai | gemini (BYOK users pick their own provider in Settings)
+    llm_provider: str = ""
+    app_host: str = "127.0.0.1"
+    app_port: int = 8765
+    app_env: str = "development"
+    database_url: str = "sqlite:///./data/jobs.db"
+    secret_key: str = "dev-insecure-secret-change-me-32b+"
+    oauth_redirect_base: str = "http://127.0.0.1:8765"
+    google_oauth_client_id: str = ""
+    google_oauth_client_secret: str = ""
+    github_oauth_client_id: str = ""
+    github_oauth_client_secret: str = ""
+    bachs_api_key: str = ""
+    bachs_api_base: str = ""
+    bachs_webhook_secret: str = ""
+    bachs_webhook_dev_accept: bool = False
+    bachs_product_byok_ng: str = ""
+    bachs_product_platform_ng: str = ""
+    bachs_product_byok_intl: str = ""
+    bachs_product_platform_intl: str = ""
+    max_upload_bytes: int = 8 * 1024 * 1024
+
+    model_config = {"env_file": str(ROOT_DIR / ".env"), "extra": "ignore"}
+
+
+DEFAULT_SECRET_KEY = "dev-insecure-secret-change-me-32b+"
+
+
+@lru_cache
+def get_settings() -> Settings:
+    return Settings()
+
+
+def assert_secure_settings() -> None:
+    """Refuse to boot in production with the default JWT/Fernet secret."""
+    s = get_settings()
+    env = (s.app_env or "").strip().lower()
+    prod_like = env in {"production", "prod", "cloud"} or (
+        not database_url().startswith("sqlite") and env not in {"development", "dev", "test", ""}
+    )
+    if prod_like and (s.secret_key or "").strip() in {"", DEFAULT_SECRET_KEY}:
+        raise RuntimeError(
+            "SECRET_KEY must be set to a strong unique value when APP_ENV is production "
+            "or DATABASE_URL is Postgres. Generate one and set it in the environment."
+        )
+
+
+@lru_cache
+def load_yaml_config() -> dict[str, Any]:
+    path = ROOT_DIR / "config.yaml"
+    with path.open(encoding="utf-8") as fh:
+        return yaml.safe_load(fh) or {}
+
+
+def reload_yaml_config() -> dict[str, Any]:
+    load_yaml_config.cache_clear()
+    return load_yaml_config()
+
+
+def project_path(*parts: str) -> Path:
+    return ROOT_DIR.joinpath(*parts)
+
+
+def ensure_dirs() -> None:
+    (ROOT_DIR / "data").mkdir(exist_ok=True)
+    (ROOT_DIR / "data" / "users").mkdir(parents=True, exist_ok=True)
+
+
+def database_url() -> str:
+    settings = get_settings()
+    url = (settings.database_url or "").strip()
+    if not url:
+        url = "sqlite:///./data/jobs.db"
+    # Normalize postgres URLs for SQLAlchemy + psycopg3
+    if url.startswith("postgres://"):
+        url = "postgresql+psycopg://" + url.removeprefix("postgres://")
+    elif url.startswith("postgresql://") and "+psycopg" not in url:
+        url = "postgresql+psycopg://" + url.removeprefix("postgresql://")
+    if url.startswith("sqlite:///./"):
+        rel = url.removeprefix("sqlite:///./")
+        abs_path = (ROOT_DIR / rel).resolve()
+        abs_path.parent.mkdir(parents=True, exist_ok=True)
+        return f"sqlite:///{abs_path.as_posix()}"
+    return url
+
+
+def uses_sqlite() -> bool:
+    return database_url().startswith("sqlite")
+
+
+def api_key_status() -> dict[str, bool]:
+    from app.llm_providers import PLATFORM_PROVIDERS
+
+    s = get_settings()
+    status: dict[str, bool] = {
+        "adzuna": bool(s.adzuna_app_id and s.adzuna_app_key),
+        "jooble": bool(s.jooble_api_key),
+    }
+    any_llm = False
+    for spec in PLATFORM_PROVIDERS:
+        configured = bool((getattr(s, spec.env_key_attr, "") or "").strip())
+        status[spec.id] = configured
+        any_llm = any_llm or configured
+    status["llm"] = any_llm
+    return status

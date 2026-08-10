@@ -1,0 +1,120 @@
+# Optional local-only path for legacy smoke scripts. Production uses per-user uploads.
+# master_cv: ""
+
+search:
+  # Broad catalogue queries — matching/ranking stays personal per user profile.
+  queries:
+    - "software"
+    - "engineer"
+    - "developer"
+    - "designer"
+    - "product manager"
+    - "data"
+    - "marketing"
+    - "sales"
+    - "remote"
+  locations:
+    - "remote"
+  prefer_remote: true
+  min_match_score: 65
+  max_results_per_source: 100
+  # Keep false so catalogue stores every role from the APIs.
+  apply_exclude_patterns: false
+
+# Used for personal score ranking (not catalogue gating).
+profile_skills:
+  - Node.js
+  - JavaScript
+  - TypeScript
+  - NestJS
+  - Express
+  - Python
+  - FastAPI
+  - REST
+  - MongoDB
+  - MySQL
+  - PostgreSQL
+  - Redis
+  - Docker
+  - AWS
+  - Git
+  - WebSockets
+  - microservices
+  - SaaS
+  - CI/CD
+
+title_keywords:
+  - backend
+  - node
+  - nodejs
+  - node.js
+  - typescript
+  - software engineer
+  - nestjs
+  - full stack
+  - fullstack
+  - api engineer
+
+penalty_keywords:
+  - "ruby on rails"
+  - "rails"
+  - "ruby"
+  - ".net"
+  - "c#"
+  - "java"
+  - "golang"
+  - "go engineer"
+  - "go developer"
+  - "php laravel"
+  - "scala"
+  - "kotlin"
+  - "rust engineer"
+
+exclude_title_patterns: []
+
+greenhouse_boards:
+  - thedutchie
+  - stripe
+  - cloudflare
+  - discord
+  - gitlab
+  - intercom
+  - coursera
+  - figma
+
+lever_boards:
+  - Flex
+  - Netflix
+  - Shopify
+  - twilio
+  - brightmoney
+
+exclude_bullet_patterns:
+  - GeoIP
+  - "Politically Exposed"
+  - "PEP"
+  - "age verification"
+  - "KYC-linked"
+
+adzuna:
+  country: "gb"
+  results_per_page: 50
+
+sources:
+  yc: true
+  wellfound: true
+  ziprecruiter: false
+  djinni: true
+
+djinni_urls:
+  - "https://djinni.co/jobs/rss/"
+  - "https://djinni.co/jobs/rss/?primary_keyword=Node.js"
+  - "https://djinni.co/jobs/rss/?primary_keyword=Python"
+  - "https://djinni.co/jobs/rss/?primary_keyword=JavaScript"
+
+wellfound_urls:
+  - "https://wellfound.com/role/software-engineer"
+  - "https://wellfound.com/role/backend-engineer"
+  - "https://wellfound.com/role/l/software-engineer/remote"
+  - "https://wellfound.com/role/product-manager"
+  - "https://wellfound.com/role/designer"

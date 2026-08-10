@@ -1,0 +1,1 @@
+"""Vitae — job matching + tailored CV dashboard."""

@@ -1,0 +1,118 @@
+{% extends "base.html" %}
+{% block title %}Jobs · Vitae{% endblock %}
+{% block content %}
+<section class="jobs-page">
+  <div class="page-head page-head--jobs">
+    <div>
+      <p class="eyebrow">Matches</p>
+      <h1>
+        {% if pager.total %}
+          {{ pager.total }} role{% if pager.total != 1 %}s{% endif %} fit
+        {% else %}
+          No strong fits yet
+        {% endif %}
+      </h1>
+      <p class="lede">Open roles scoring ≥{{ '%.0f'|format(min_score) }}% against your CV.</p>
+    </div>
+    <div class="page-actions">
+      <a class="btn" href="/paste">Paste</a>
+      <form action="/rescore" method="post" data-busy>
+        <button class="btn" type="submit">Rescore</button>
+      </form>
+    </div>
+  </div>
+
+  {% if not full_access and locked_count %}
+  <div class="panel tease-banner">
+    <h2>{{ free_clear }} clear matches · {{ locked_count }} locked</h2>
+    <p class="meta" style="margin:0">Upgrade to open every fit and unlock AI tailored CVs.</p>
+    <div class="actions" style="margin-top:var(--s3)">
+      <a class="btn btn-primary" href="/billing">Unlock on Billing</a>
+    </div>
+  </div>
+  {% endif %}
+
+  <form class="jobs-toolbar" method="get" action="/" role="search">
+    <label class="jobs-toolbar__search">Search
+      <input type="search" name="q" value="{{ q }}" placeholder="Role, company, or place" autocomplete="off" />
+    </label>
+    <label>Status
+      <select name="status">
+        <option value="" {% if not status %}selected{% endif %}>All</option>
+        <option value="new" {% if status == 'new' %}selected{% endif %}>New{% if status_counts.new %} · {{ status_counts.new }}{% endif %}</option>
+        <option value="cv_ready" {% if status == 'cv_ready' %}selected{% endif %}>CV ready{% if status_counts.cv_ready %} · {{ status_counts.cv_ready }}{% endif %}</option>
+        <option value="applied" {% if status == 'applied' %}selected{% endif %}>Applied{% if status_counts.applied %} · {{ status_counts.applied }}{% endif %}</option>
+        <option value="skipped" {% if status == 'skipped' %}selected{% endif %}>Skipped{% if status_counts.skipped %} · {{ status_counts.skipped }}{% endif %}</option>
+      </select>
+    </label>
+    <label class="jobs-toolbar__score">Min %
+      <input type="number" name="min_score" value="{{ '%.0f'|format(min_score) }}" min="0" max="100" step="1" />
+    </label>
+    <button class="btn btn-primary" type="submit">Apply</button>
+  </form>
+
+  {% if jobs %}
+  <p class="jobs-range meta">
+    {{ pager.start }}–{{ pager.end }} of {{ pager.total }}
+  </p>
+
+  <ul class="job-list">
+    {% for row in jobs %}
+    {% set job = row.card %}
+    <li class="job-row {% if row.blurred %}is-blurred{% endif %}">
+      {% if row.openable %}
+      <a class="job-row__link" href="/jobs/{{ job.id }}" target="_blank" rel="noopener">
+      {% else %}
+      <a class="job-row__link" href="/billing?flash=Upgrade%20to%20unlock%20more%20matched%20roles." target="_blank" rel="noopener">
+      {% endif %}
+        <span class="job-row__score" aria-label="{{ '%.0f'|format(job.match_score) }} percent match">{{ '%.0f'|format(job.match_score) }}</span>
+        <span class="job-row__body">
+          <span class="job-row__title {% if row.blurred %}blur-text{% endif %}">{{ job.title }}</span>
+          <span class="job-row__meta {% if row.blurred %}blur-text{% endif %}">
+            {{ job.company or "Company TBA" }}
+            {% if job.location %}<span class="dot">·</span>{{ job.location }}{% endif %}
+          </span>
+        </span>
+        {% if row.blurred %}
+        <span class="badge">Locked</span>
+        {% else %}
+        <span class="badge {{ job.status }}">{{ job.status.replace('_', ' ') }}</span>
+        {% endif %}
+      </a>
+    </li>
+    {% endfor %}
+  </ul>
+
+  {% if pager.total_pages > 1 %}
+  <nav class="pager" aria-label="Jobs pages">
+    {% if pager.has_prev %}
+      <a class="btn" href="/?{{ pager.prev_qs }}">Previous</a>
+    {% else %}
+      <span class="btn btn-ghost" aria-disabled="true">Previous</span>
+    {% endif %}
+    <span class="pager__label">Page {{ pager.page }} / {{ pager.total_pages }}</span>
+    {% if pager.has_next %}
+      <a class="btn" href="/?{{ pager.next_qs }}">Next</a>
+    {% else %}
+      <span class="btn btn-ghost" aria-disabled="true">Next</span>
+    {% endif %}
+  </nav>
+  {% endif %}
+
+  {% else %}
+  <div class="jobs-empty">
+    {% if not has_matches %}
+      <p><strong>No open roles yet.</strong></p>
+      <p class="meta">Check back shortly{% if is_admin %}, or run <a href="/admin">Admin → Sync now</a>{% endif %}.</p>
+    {% else %}
+      <p><strong>Nothing at ≥{{ '%.0f'|format(min_score) }}%.</strong></p>
+      <p class="meta">Try a lower threshold or paste a job you already found.</p>
+      <div class="page-actions" style="margin-top:var(--s4)">
+        <a class="btn btn-primary" href="/?{{ pager.suggest_qs }}">Try {{ suggest_min }}%</a>
+        <a class="btn" href="/paste">Paste a job</a>
+      </div>
+    {% endif %}
+  </div>
+  {% endif %}
+</section>
+{% endblock %}

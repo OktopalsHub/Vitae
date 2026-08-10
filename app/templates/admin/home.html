@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}Admin · Vitae{% endblock %}
+{% block content %}
+<div class="page-head">
+  <p class="eyebrow">Admin</p>
+  <h1>Ops dashboard</h1>
+  <p class="lede">Shared catalogue sync and high-level metrics. Role changes are limited to super admins.</p>
+</div>
+
+<div class="stats">
+  <div class="stat"><div class="n">{{ metrics.public_listings }}</div><div class="l">Open listings</div></div>
+  <div class="stat"><div class="n">{{ metrics.closed_listings }}</div><div class="l">Closed listings</div></div>
+  <div class="stat"><div class="n">{{ metrics.user_jobs }}</div><div class="l">User rankings</div></div>
+  <div class="stat"><div class="n">{{ metrics.users }}</div><div class="l">Users</div></div>
+</div>
+
+<div class="panel">
+  <h3 class="rule-title" style="margin-top:0">Shared catalogue</h3>
+  <p class="meta">Hourly sync pulls public jobs from the APIs (insert / reopen / close). Every 3 hours we refresh scores on existing user rankings only. Manual sync runs the catalogue job now.</p>
+  <form action="/sync" method="post" data-busy class="actions">
+    <button class="btn btn-primary" type="submit">Sync now</button>
+  </form>
+</div>
+
+{% if is_super_admin %}
+<div class="panel">
+  <h3 class="rule-title" style="margin-top:0">Access control</h3>
+  <p class="meta" style="margin:0 0 var(--s3)">Basic {{ metrics.roles.basic }} · Admins {{ metrics.roles.admin }} · Super admins {{ metrics.roles.super_admin }} · Paid {{ metrics.paid }}</p>
+  <a class="btn" href="/admin/users">Manage roles</a>
+</div>
+{% endif %}
+{% endblock %}

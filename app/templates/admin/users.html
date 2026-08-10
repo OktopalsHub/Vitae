@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}Users · Admin · Vitae{% endblock %}
+{% block content %}
+<div class="page-head">
+  <p class="eyebrow">Super admin</p>
+  <h1>User roles</h1>
+  <p class="lede">Promote admins who can sync the catalogue. Only super admins can change roles.</p>
+</div>
+
+<div class="actions" style="margin-bottom:var(--s4)">
+  <a class="btn" href="/admin">← Admin home</a>
+</div>
+
+<div class="panel table-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th>Email</th>
+        <th>Name</th>
+        <th>Role</th>
+        <th>Status</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for person in people %}
+      <tr>
+        <td><strong>{{ person.email }}</strong>{% if person.is_self %} <span class="meta">(you)</span>{% endif %}</td>
+        <td>{{ person.full_name or "—" }}</td>
+        <td><span class="badge">{{ person.role }}</span></td>
+        <td>{% if person.active %}active{% else %}disabled{% endif %}</td>
+        <td>
+          {% if not person.is_self %}
+          <form method="post" action="/admin/users/{{ person.id }}/role" class="actions">
+            <label class="label-inline" style="margin:0">
+              <select name="role">
+                {% for r in roles %}
+                <option value="{{ r }}" {% if person.role == r %}selected{% endif %}>{{ r }}</option>
+                {% endfor %}
+              </select>
+            </label>
+            <button class="btn" type="submit">Save</button>
+          </form>
+          {% else %}
+          <span class="meta">Protected</span>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

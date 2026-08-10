@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}Paste job · Vitae{% endblock %}
+{% block content %}
+<div class="page-head">
+  <p class="eyebrow">Paste a job</p>
+  <h1>Add a role by hand</h1>
+  <p class="lede">For LinkedIn, BambooHR, Hailaman, ZipRecruiter pages that Sync cannot reach, or any board without a public search API. Paste a URL (JobPosting JSON-LD preferred) and/or the full job description.</p>
+</div>
+
+<div class="panel">
+  {% if error %}<div class="error">{{ error }}</div>{% endif %}
+  <form method="post" action="/paste" data-busy>
+    <div class="filters" style="margin-bottom:var(--s4)">
+      <label style="flex:1">Job URL
+        <input style="min-width:100%" type="url" name="url" placeholder="https://..." />
+      </label>
+      <label>Title (optional)
+        <input type="text" name="title" />
+      </label>
+      <label>Company (optional)
+        <input type="text" name="company" />
+      </label>
+      <label>Location (optional)
+        <input type="text" name="location" />
+      </label>
+    </div>
+    <label>Job description
+      <textarea name="description" placeholder="Paste the full job description here if URL fetch fails..."></textarea>
+    </label>
+    <div class="actions" style="margin-top:var(--s4)">
+      <button class="btn btn-primary" type="submit">Add job</button>
+      <a class="btn" href="/">Cancel</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

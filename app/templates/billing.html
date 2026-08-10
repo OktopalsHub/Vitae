@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% block title %}Billing · Vitae{% endblock %}
+{% block content %}
+<div class="page-head">
+  <p class="eyebrow">Billing</p>
+  {% if is_admin %}
+  <h1>Staff access</h1>
+  <p class="lede">Admins and super admins get the full catalogue and AI without a paid plan. Optionally set a personal LLM key in Settings to override platform AI.</p>
+  {% else %}
+  <h1>Unlock matches &amp; AI</h1>
+  <p class="lede">Billing is per profile. You’re managing <strong>{{ billing_profile.label }}</strong>. Free profiles get {{ free_clear }} clear matches — subscribe to unlock this track’s full list and AI.</p>
+  {% endif %}
+</div>
+
+{% if is_admin %}
+<div class="panel">
+  <p style="margin:0"><strong>No payment required</strong> for your account.
+    Plan on file: <strong>{{ plan }}</strong>{% if subscription_status %} · <span class="meta">subscription {{ subscription_status }}</span>{% endif %}.
+    Manage personal AI keys in <a href="/settings">Settings</a>.</p>
+</div>
+{% else %}
+<div class="panel">
+  <h3 class="rule-title" style="margin-top:0">Current plan</h3>
+  <p style="margin:0"><strong>{% if plan == 'none' %}Free — {{ free_clear }} clear matches{% elif plan == 'byok_monthly' %}Bring your own AI{% elif plan == 'platform_monthly' %}Platform AI{% else %}{{ plan }}{% endif %}</strong>
+    {% if subscription_status %} · <span class="meta">{{ subscription_status }}</span>{% endif %}
+  </p>
+  <div class="actions" style="margin-top:var(--s4)">
+    <a class="btn" href="/">Skip — continue with preview</a>
+  </div>
+</div>
+
+<div
+  class="billing-plans"
+  data-billing-region="{{ region }}"
+  data-region-source="{{ region_source }}"
+>
+  <div class="plan-card is-featured">
+    <h3>Platform AI</h3>
+    <p class="meta" style="margin:0">Full job unlock + we run tailored CVs and rewrites. Cancel anytime.</p>
+    <p class="plan-price">{{ price_platform }} <small>/ month</small></p>
+    <form method="post" action="/billing/checkout" data-busy class="actions">
+      <input type="hidden" name="plan" value="platform_monthly" />
+      <button class="btn btn-primary" type="submit">Subscribe</button>
+    </form>
+  </div>
+  <div class="plan-card">
+    <h3>Bring your own AI key</h3>
+    <p class="meta" style="margin:0">Full job unlock + use your own provider keys (OpenAI, DeepSeek, Grok, …). Cancel anytime.</p>
+    <p class="plan-price">{{ price_byok }} <small>/ month</small></p>
+    <form method="post" action="/billing/checkout" data-busy class="actions">
+      <input type="hidden" name="plan" value="byok_monthly" />
+      <button class="btn" type="submit">Subscribe</button>
+    </form>
+  </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  var root = document.querySelector("[data-billing-region]");
+  if (!root || root.dataset.regionSource !== "default") return;
+  var langs = navigator.languages || [navigator.language || ""];
+  var tz = "";
+  try { tz = Intl.DateTimeFormat().resolvedOptions().timeZone || ""; } catch (e) {}
+  var isNg = tz === "Africa/Lagos" || langs.some(function (l) {
+    var t = String(l || "").toLowerCase().replace("_", "-");
+    return t === "ng" || t.slice(-3) === "-ng";
+  });
+  var region = isNg ? "ng" : "intl";
+  if (region === root.dataset.billingRegion) return;
+  document.cookie = "vitae_region=" + region + "; path=/; max-age=31536000; samesite=lax";
+  window.location.reload();
+})();
+</script>
+{% endblock %}

@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}Register · Vitae{% endblock %}
+{% block shell_class %}shell--marketing{% endblock %}
+{% block content %}
+<div class="auth-split">
+  <div class="panel auth-panel">
+    <a class="wordmark-lg" href="/">V<em>itae</em></a>
+    <h1>Create account</h1>
+    <p class="meta">Use email and password, or continue with Google / GitHub — same email is one account.</p>
+    {% if error %}
+      <div class="error">{{ error }}</div>
+    {% endif %}
+    <form method="post" action="/register" class="form-grid" style="margin-top:var(--s4)">
+      <label style="grid-column:1/-1">Email<input type="email" name="email" required autocomplete="email" /></label>
+      <label style="grid-column:1/-1">Password<input type="password" name="password" required minlength="8" autocomplete="new-password" /></label>
+      <div><button class="btn btn-primary" type="submit">Create account</button></div>
+    </form>
+    <p class="divider">Or continue with</p>
+    <div class="oauth-row">
+      <a class="btn" href="/auth/google/authorize">Google</a>
+      <a class="btn" href="/auth/github/authorize">GitHub</a>
+    </div>
+    <p class="meta" style="margin-top:var(--s5)">Already have an account? <a href="/login">Sign in</a></p>
+  </div>
+
+  <aside class="panel auth-value">
+    <p class="eyebrow">What you get</p>
+    <h2>Match first. Unlock when ready.</h2>
+    <ol class="auth-steps">
+      <li>
+        <strong>Upload your CV</strong>
+        <span>We parse it into a profile you confirm in short steps.</span>
+      </li>
+      <li>
+        <strong>See your top matches</strong>
+        <span>Three clear fits free — the rest stay locked until you upgrade.</span>
+      </li>
+      <li>
+        <strong>Unlock full list + AI</strong>
+        <span>Plans open every match and tailored CVs. Skip stays on preview.</span>
+      </li>
+    </ol>
+  </aside>
+</div>
+{% endblock %}
+{% block footer %}<footer class="site-footer"><span>Vitae — personal job matching</span></footer>{% endblock %}

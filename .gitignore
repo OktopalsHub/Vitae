@@ -1,0 +1,24 @@
+.env
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+*.egg-info/
+dist/
+build/
+
+# Local runtime data (user CVs, SQLite, tailored outputs)
+data/jobs.db
+data/jobs.db-*
+data/users/
+outputs/
+
+# Personal / local documents — each user uploads their own in prod
+Mbazu*
+*.docx
+*.pdf
+!app/**/*.docx
+
+# Secrets / local tools
+.fastapicloud/

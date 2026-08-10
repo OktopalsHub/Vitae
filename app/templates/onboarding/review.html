@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+{% block title %}Confirm profile · Vitae{% endblock %}
+{% block content %}
+<div class="page-head">
+  <p class="eyebrow">Onboarding</p>
+  <h1>Confirm your details</h1>
+  <p class="lede">Break this into short sessions if you like. You can change anything anytime in Settings.</p>
+</div>
+
+<nav class="step-rail" aria-label="Profile sections">
+  {% for key, label in sections %}
+    <a class="{% if section == key %}active{% endif %}" href="/onboarding/review/{{ key }}">{{ label }}</a>
+  {% endfor %}
+</nav>
+
+<div class="panel">
+  {% if section == 'basics' %}
+  <form method="post" action="/onboarding/review/basics" class="form-grid">
+    <label>Full name<input name="full_name" value="{{ apply.full_name }}" required /></label>
+    <label>Email<input name="email" value="{{ apply.email }}" /></label>
+    <label>Phone<input name="phone" value="{{ apply.phone }}" /></label>
+    <label>LinkedIn<input name="linkedin" value="{{ apply.linkedin }}" /></label>
+    <label>GitHub<input name="github" value="{{ apply.github }}" /></label>
+    <label>Website<input name="website" value="{{ apply.website }}" /></label>
+    <label>Location preference<input name="location_preference" value="{{ apply.location_preference }}" /></label>
+    <label>Years experience<input name="years_experience" value="{{ apply.years_experience }}" /></label>
+    <div style="grid-column:1/-1" class="actions">
+      <button class="btn btn-primary" type="submit" name="action" value="next">Save &amp; continue</button>
+    </div>
+  </form>
+  {% elif section == 'summary' %}
+  <form method="post" action="/onboarding/review/summary" class="form-grid">
+    <label style="grid-column:1/-1">Professional summary
+      <textarea name="summary" style="min-height:140px">{{ profile.summary }}</textarea>
+    </label>
+    <div class="actions">
+      <button class="btn" type="submit" name="action" value="back">Back</button>
+      <button class="btn btn-primary" type="submit" name="action" value="next">Save &amp; continue</button>
+    </div>
+  </form>
+  {% elif section == 'skills' %}
+  <form method="post" action="/onboarding/review/skills" class="form-grid">
+    <label style="grid-column:1/-1">Skills (comma or newline separated)
+      <textarea name="skills" style="min-height:140px">{{ profile.skills | join(', ') }}</textarea>
+    </label>
+    <div class="actions">
+      <button class="btn" type="submit" name="action" value="back">Back</button>
+      <button class="btn btn-primary" type="submit" name="action" value="next">Save &amp; continue</button>
+    </div>
+  </form>
+  {% elif section == 'experience' %}
+  <form method="post" action="/onboarding/review/experience" class="form-grid">
+    <label style="grid-column:1/-1">Work experience (one line per bullet / fact)
+      <textarea name="experience" style="min-height:180px">{{ profile.experience_raw | join('\n') }}</textarea>
+    </label>
+    <div class="actions">
+      <button class="btn" type="submit" name="action" value="back">Back</button>
+      <button class="btn btn-primary" type="submit" name="action" value="next">Save &amp; continue</button>
+    </div>
+  </form>
+  {% elif section == 'projects' %}
+  <form method="post" action="/onboarding/review/projects" class="form-grid">
+    <label style="grid-column:1/-1">Projects (optional)
+      <textarea name="projects" style="min-height:140px">{{ profile.projects_raw | join('\n') }}</textarea>
+    </label>
+    <div class="actions">
+      <button class="btn" type="submit" name="action" value="back">Back</button>
+      <button class="btn btn-primary" type="submit" name="action" value="next">Save &amp; continue</button>
+    </div>
+  </form>
+  {% elif section == 'education' %}
+  <form method="post" action="/onboarding/review/education" class="form-grid">
+    <label style="grid-column:1/-1">Education (optional)
+      <textarea name="education" style="min-height:120px">{{ profile.education_raw | join('\n') }}</textarea>
+    </label>
+    <div class="actions">
+      <button class="btn" type="submit" name="action" value="back">Back</button>
+      <button class="btn btn-primary" type="submit" name="action" value="next">Save &amp; continue</button>
+    </div>
+  </form>
+  {% else %}
+  <div style="text-align:left">
+    <h3 class="rule-title" style="margin-top:0">Ready?</h3>
+    <p style="font-family:var(--font-display);font-size:1.4rem;font-weight:650;margin:0 0 var(--s2)">{{ apply.full_name or profile.name }}</p>
+    <p class="meta">{{ (profile.skills or [])|length }} skills · {{ (profile.experience_raw or [])|length }} experience lines</p>
+    <p class="meta">Confirm to score roles against this profile. Next you’ll see Billing — unlock the full list, or skip and keep three clear matches.</p>
+    <form method="post" action="/onboarding/review/confirm" class="actions" style="margin-top:var(--s4)">
+      <button class="btn" type="submit" name="action" value="back" formaction="/onboarding/review/education">Back</button>
+      <button class="btn btn-primary" type="submit" name="action" value="confirm">Yes — show my matches</button>
+    </form>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}
