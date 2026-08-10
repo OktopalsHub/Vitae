@@ -40,17 +40,25 @@ def ensure_account(db: Session, user: User) -> None:
     """Create Default profile / settings / billing and on-disk folders if missing.
 
     Does not reset active_profile_id when the user already has a valid one.
+    Updates the User row via this sync Session so auth-session user objects stay out of the way.
     """
+    sync_user = db.get(User, user.id)
+    if sync_user is None:
+        # Extremely rare race; attach provided user.
+        sync_user = user
+        db.add(sync_user)
+        db.flush()
+
     profile = (
         db.query(Profile)
-        .filter(Profile.user_id == user.id, Profile.archived_at.is_(None))
+        .filter(Profile.user_id == sync_user.id, Profile.archived_at.is_(None))
         .order_by(Profile.id.asc())
         .first()
     )
     if profile is None:
         profile = (
             db.query(Profile)
-            .filter(Profile.user_id == user.id)
+            .filter(Profile.user_id == sync_user.id)
             .order_by(Profile.id.asc())
             .first()
         )
@@ -60,10 +68,10 @@ def ensure_account(db: Session, user: User) -> None:
             db.flush()
     if profile is None:
         profile = Profile(
-            user_id=user.id,
+            user_id=sync_user.id,
             label="Default",
-            full_name=user.full_name or "",
-            email=user.email or "",
+            full_name=sync_user.full_name or "",
+            email=sync_user.email or "",
             location_preference="Remote / Worldwide",
             work_authorization="Eligible to work remotely",
             salary_expectation="Open to discussion based on role and location",
@@ -73,18 +81,21 @@ def ensure_account(db: Session, user: User) -> None:
         )
         db.add(profile)
         db.flush()
-        user.active_profile_id = profile.id
-        db.add(user)
-    elif user.active_profile_id is None:
-        user.active_profile_id = profile.id
-        db.add(user)
+        sync_user.active_profile_id = profile.id
+        db.add(sync_user)
+    elif sync_user.active_profile_id is None:
+        sync_user.active_profile_id = profile.id
+        db.add(sync_user)
     else:
-        active = db.get(Profile, user.active_profile_id)
-        if active is None or active.user_id != user.id or active.archived_at is not None:
-            user.active_profile_id = profile.id
-            db.add(user)
+        active = db.get(Profile, sync_user.active_profile_id)
+        if active is None or active.user_id != sync_user.id or active.archived_at is not None:
+            sync_user.active_profile_id = profile.id
+            db.add(sync_user)
 
-    if not db.get(UserSettings, user.id):
+    # Mirror onto request user for the rest of the request.
+    user.active_profile_id = sync_user.active_profile_id
+
+    if not db.get(UserSettings, sync_user.id):
         defaults = load_yaml_config()
         slim = {
             "search": defaults.get("search") or {},
@@ -99,12 +110,11 @@ def ensure_account(db: Session, user: User) -> None:
             "djinni_urls": defaults.get("djinni_urls") or [],
             "exclude_bullet_patterns": defaults.get("exclude_bullet_patterns") or [],
         }
-        db.add(UserSettings(user_id=user.id, settings_json=json.dumps(slim)))
+        db.add(UserSettings(user_id=sync_user.id, settings_json=json.dumps(slim)))
 
-    # Billing row for every profile of this user
-    for p in db.query(Profile).filter(Profile.user_id == user.id).all():
-        ensure_profile_billing(db, user, p)
-        profile_data_dir(user.id, p.id)
+    for p in db.query(Profile).filter(Profile.user_id == sync_user.id).all():
+        ensure_profile_billing(db, sync_user, p)
+        profile_data_dir(sync_user.id, p.id)
 
-    user_data_dir(user.id)
+    user_data_dir(sync_user.id)
     db.flush()

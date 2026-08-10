@@ -32,6 +32,31 @@ __all__ = [
 _ACTIVE_SUB = frozenset({"active", "trialing"})
 
 
+def _sync_user(db: Session, user: User) -> User:
+    """Load the User row on the sync Session (auth may use a different session)."""
+    sync = db.get(User, user.id)
+    if sync is None:
+        raise ValueError("User not found")
+    return sync
+
+
+def _persist_active_profile_id(db: Session, user: User, profile_id: int) -> None:
+    """Persist active profile on the account row so auto-login restores it."""
+    sync = _sync_user(db, user)
+    if sync.active_profile_id != profile_id:
+        sync.active_profile_id = profile_id
+        db.add(sync)
+    # Keep the request-scoped user object consistent for the rest of the call.
+    user.active_profile_id = profile_id
+
+
+def _owned_alive_profile(db: Session, user: User, profile_id: int) -> Profile:
+    row = db.get(Profile, profile_id)
+    if row is None or row.user_id != user.id or row.archived_at is not None:
+        raise ValueError("Profile not found")
+    return row
+
+
 def _alive_profiles_q(db: Session, user: User):
     return (
         db.query(Profile)
@@ -41,11 +66,16 @@ def _alive_profiles_q(db: Session, user: User):
 
 
 def get_active_profile(db: Session, user: User) -> Profile:
-    """Return the user's active career profile (creates Default if needed)."""
+    """Return the user's active career profile (creates Default if needed).
+
+    `user.active_profile_id` is stored on the account and survives logout / auto-login.
+    """
     ensure_account(db, user)
-    if user.active_profile_id:
-        row = db.get(Profile, user.active_profile_id)
+    sync = _sync_user(db, user)
+    if sync.active_profile_id:
+        row = db.get(Profile, sync.active_profile_id)
         if row is not None and row.user_id == user.id and row.archived_at is None:
+            user.active_profile_id = row.id
             return row
     row = _alive_profiles_q(db, user).first()
     if row is None:
@@ -60,10 +90,8 @@ def get_active_profile(db: Session, user: User) -> Profile:
             db.add(row)
             db.flush()
     assert row is not None
-    if user.active_profile_id != row.id:
-        user.active_profile_id = row.id
-        db.add(user)
-        db.flush()
+    _persist_active_profile_id(db, user, row.id)
+    db.flush()
     return row
 
 
@@ -119,28 +147,22 @@ def create_profile(
     ensure_profile_billing(db, user, profile)
     profile_data_dir(user.id, profile.id)
     if switch_to:
-        user.active_profile_id = profile.id
-        db.add(user)
+        _persist_active_profile_id(db, user, profile.id)
     db.flush()
     return profile
 
 
 def switch_active_profile(db: Session, user: User, profile_id: int) -> Profile:
     ensure_account(db, user)
-    row = db.get(Profile, profile_id)
-    if row is None or row.user_id != user.id or row.archived_at is not None:
-        raise ValueError("Profile not found")
-    user.active_profile_id = row.id
-    db.add(user)
+    row = _owned_alive_profile(db, user, profile_id)
+    _persist_active_profile_id(db, user, row.id)
     db.flush()
     return row
 
 
 def rename_profile(db: Session, user: User, profile_id: int, label: str) -> Profile:
     ensure_account(db, user)
-    row = db.get(Profile, profile_id)
-    if row is None or row.user_id != user.id or row.archived_at is not None:
-        raise ValueError("Profile not found")
+    row = _owned_alive_profile(db, user, profile_id)
     row.label = _slug_label(label)
     db.add(row)
     db.flush()
@@ -150,9 +172,7 @@ def rename_profile(db: Session, user: User, profile_id: int, label: str) -> Prof
 def archive_profile(db: Session, user: User, profile_id: int) -> Profile:
     """Soft-delete a profile. Blocks last profile and active paid subscriptions."""
     ensure_account(db, user)
-    row = db.get(Profile, profile_id)
-    if row is None or row.user_id != user.id or row.archived_at is not None:
-        raise ValueError("Profile not found")
+    row = _owned_alive_profile(db, user, profile_id)
     alive = _alive_profiles_q(db, user).count()
     if alive <= 1:
         raise ValueError("You need at least one active profile.")
@@ -164,12 +184,12 @@ def archive_profile(db: Session, user: User, profile_id: int) -> Profile:
         )
     row.archived_at = datetime.utcnow()
     db.add(row)
-    if user.active_profile_id == row.id:
+    sync = _sync_user(db, user)
+    if sync.active_profile_id == row.id:
         next_row = _alive_profiles_q(db, user).filter(Profile.id != row.id).first()
         if next_row is None:
             raise ValueError("You need at least one active profile.")
-        user.active_profile_id = next_row.id
-        db.add(user)
+        _persist_active_profile_id(db, user, next_row.id)
     db.flush()
     return row
 

@@ -12,7 +12,7 @@
           No strong fits yet
         {% endif %}
       </h1>
-      <p class="lede">Open roles scoring ≥{{ '%.0f'|format(min_score) }}% against your CV.</p>
+      <p class="lede">Open roles scoring ≥{{ '%.0f'|format(min_score) }}% against your {{ active_profile.label if active_profile else "CV" }} profile.</p>
     </div>
     <div class="page-actions">
       <a class="btn" href="/paste">Paste</a>

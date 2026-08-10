@@ -8,7 +8,7 @@
   <p class="lede">Admins and super admins get the full catalogue and AI without a paid plan. Optionally set a personal LLM key in Settings to override platform AI.</p>
   {% else %}
   <h1>Unlock matches &amp; AI</h1>
-  <p class="lede">Billing is per profile. You’re managing <strong>{{ billing_profile.label }}</strong>. Free profiles get {{ free_clear }} clear matches — subscribe to unlock this track’s full list and AI.</p>
+  <p class="lede">Billing is per profile. You’re managing <strong>{{ billing_profile.label }}</strong>{% if active_profile and billing_profile and active_profile.id == billing_profile.id %} (active track){% endif %}. Free profiles get {{ free_clear }} clear matches — subscribe to unlock this track’s full list and AI.</p>
   {% endif %}
 </div>
 

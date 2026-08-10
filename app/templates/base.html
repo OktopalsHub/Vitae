@@ -20,7 +20,28 @@
       <nav class="nav" aria-label="Primary">
         {% if user %}
           {% if profile_ready %}<a href="/">Jobs</a>{% endif %}
-          <a href="/profiles">Profiles{% if active_profile %} · {{ active_profile.label }}{% endif %}</a>
+          {% if nav_profiles %}
+          <details class="nav-profile">
+            <summary class="nav-profile-summary" title="Switch career track">
+              {{ active_profile.label if active_profile else "Profiles" }}
+            </summary>
+            <div class="nav-profile-menu">
+              {% for p in nav_profiles %}
+                {% if p.active %}
+                <span class="nav-profile-item is-active">{{ p.label }} · active</span>
+                {% else %}
+                <form method="post" action="/profiles/switch">
+                  <input type="hidden" name="profile_id" value="{{ p.id }}" />
+                  <button class="nav-profile-item" type="submit">{{ p.label }}</button>
+                </form>
+                {% endif %}
+              {% endfor %}
+              <a class="nav-profile-item nav-profile-manage" href="/profiles">Manage profiles</a>
+            </div>
+          </details>
+          {% else %}
+          <a href="/profiles">Profiles</a>
+          {% endif %}
           <a href="/billing">Billing</a>
           {% if profile_ready %}<a href="/settings">Settings</a>{% else %}<a href="/onboarding">Onboarding</a>{% endif %}
           {% if is_admin %}<a href="/admin">Admin</a>{% endif %}
