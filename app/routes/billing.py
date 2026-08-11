@@ -11,7 +11,15 @@ from sqlalchemy.orm import Session
 
 from app.accounts import detect_billing_region_detail, ensure_account, FREE_CLEAR_MATCHES
 from app.accounts.profile import get_active_profile, get_profile_billing
-from app.billing import PAID_PLANS, create_checkout_session, plan_from_metadata, verify_bachs_webhook
+from app.billing import (
+    PAID_PLANS,
+    checkout_note_for,
+    checkout_redirect_url,
+    create_checkout_session,
+    display_price,
+    plan_from_metadata,
+    verify_bachs_webhook,
+)
 from app.config import project_path
 from app.db import get_db
 from app.models import BillingPlan, Profile, ProfileBilling, User
@@ -23,7 +31,7 @@ templates = Jinja2Templates(directory=str(project_path("app", "templates")))
 
 
 def _sync_region_from_request(request: Request, billing: ProfileBilling, db: Session) -> tuple[str, str]:
-    """Always price from live geo (headers / locale cookie) — never a user-selected region."""
+    """Price from trusted edge geo only (see TRUST_EDGE_GEO) — never client cookies."""
     region, source = detect_billing_region_detail(dict(request.headers), dict(request.cookies))
     if billing.billing_region != region:
         billing.billing_region = region
@@ -42,7 +50,6 @@ def billing_page(
     profile = get_active_profile(db, user)
     billing = get_profile_billing(db, user, profile)
     region, region_source = _sync_region_from_request(request, billing, db)
-    is_ng = region == "ng"
     return templates.TemplateResponse(
         "billing.html",
         template_ctx(
@@ -53,10 +60,11 @@ def billing_page(
             region_source=region_source,
             plan=billing.plan,
             subscription_status=billing.subscription_status,
-            price_byok="₦2,000" if is_ng else "$5",
-            price_platform="₦5,000" if is_ng else "$10",
+            price_byok=display_price("byok_monthly", region),
+            price_platform=display_price("platform_monthly", region),
             free_clear=FREE_CLEAR_MATCHES,
             billing_profile=profile,
+            checkout_note=checkout_note_for(region),
         ),
     )
 
@@ -95,11 +103,9 @@ async def billing_checkout(
     except Exception as exc:  # noqa: BLE001
         return flash_redirect("/billing", f"Checkout failed: {exc}")
 
-    data = session.get("data") if isinstance(session.get("data"), dict) else session
-    checkout_id = data.get("checkout_id") or data.get("id") or ""
-    url = data.get("url") or data.get("checkout_url") or data.get("link") or ""
+    checkout_id, url = checkout_redirect_url(session if isinstance(session, dict) else {})
     if checkout_id:
-        billing.last_checkout_id = str(checkout_id)
+        billing.last_checkout_id = checkout_id
         db.add(billing)
         db.commit()
     if not url:
@@ -156,7 +162,15 @@ async def bachs_webhook(request: Request, db: Session = Depends(get_db)):
     user_id_str = (meta.get("user_id") or "").strip()
     plan = plan_from_metadata({"metadata": meta, **data})
     customer = data.get("customer") or {}
-    customer_id = customer.get("customer_id") or data.get("customer_id") or ""
+    if not isinstance(customer, dict):
+        customer = {}
+    # collection.succeeded uses customer.id; subscription events use customer_id
+    customer_id = (
+        customer.get("customer_id")
+        or customer.get("id")
+        or data.get("customer_id")
+        or ""
+    )
     email = (customer.get("email") or "").strip().lower()
 
     user: User | None = None
@@ -177,38 +191,70 @@ async def bachs_webhook(request: Request, db: Session = Depends(get_db)):
     if checkout_id:
         billing.last_checkout_id = str(checkout_id)
 
-    if etype in {"checkout.completed", "collection.succeeded"}:
+    if etype == "checkout.completed":
+        # Prefer subscription object when mode=subscription; else activate from metadata.
         sub = data.get("subscription") or {}
+        payment_status = str(data.get("payment_status") or "").lower()
+        mode = str(data.get("mode") or "").lower()
         if isinstance(sub, dict) and sub.get("subscription_id"):
             billing.bachs_subscription_id = str(sub["subscription_id"])
-            status = str(sub.get("status") or "active")
+        if payment_status in {"paid", "no_payment_required"} or mode == "subscription":
             chosen = plan or (
                 billing.plan if billing.plan in PAID_PLANS else BillingPlan.PLATFORM_MONTHLY.value
             )
-            _apply_paid_plan(billing, chosen, status)
-        elif plan in PAID_PLANS:
+            if chosen in PAID_PLANS:
+                status = "trialing" if payment_status == "no_payment_required" else "active"
+                if isinstance(sub, dict) and sub.get("status"):
+                    status = str(sub["status"])
+                _apply_paid_plan(billing, chosen, status)
+
+    elif etype == "collection.succeeded":
+        # First payment / renewal. Subscription provisioning also arrives via
+        # customer.subscription.* — treat this as access confirmation.
+        sub = data.get("subscription") or {}
+        if isinstance(sub, dict) and sub.get("subscription_id"):
+            billing.bachs_subscription_id = str(sub["subscription_id"])
+        if plan in PAID_PLANS:
             _apply_paid_plan(billing, plan, "active")
+        elif billing.plan in PAID_PLANS:
+            billing.subscription_status = "active"
 
     elif etype in {
         "customer.subscription.created",
         "customer.subscription.updated",
     }:
         billing.bachs_subscription_id = str(
-            data.get("subscription_id") or billing.bachs_subscription_id
+            data.get("subscription_id") or billing.bachs_subscription_id or ""
         )
-        status = str(data.get("status") or "active")
+        status = str(data.get("status") or "active").lower()
         billing.subscription_status = status
         if plan in PAID_PLANS:
             billing.plan = plan
-        elif billing.plan not in PAID_PLANS:
+        elif billing.plan not in PAID_PLANS and status in {"active", "trialing", "past_due"}:
             billing.plan = BillingPlan.PLATFORM_MONTHLY.value
-        if status in {"canceled", "unpaid", "paused"}:
+        # past_due / unpaid are recoverable (Bachs dunning). Keep plan on file;
+        # AI stays gated until status is active/trialing again.
+        if status in {"canceled", "paused"}:
             billing.plan = BillingPlan.NONE.value
 
     elif etype == "customer.subscription.deleted":
         billing.subscription_status = "canceled"
         if billing.plan in PAID_PLANS:
             billing.plan = BillingPlan.NONE.value
+
+    elif etype == "invoice.paid":
+        # Renewal signal — restore active if we still know the paid plan.
+        sub_id = data.get("subscription_id") or ""
+        if sub_id:
+            billing.bachs_subscription_id = str(sub_id)
+        if billing.plan in PAID_PLANS or plan in PAID_PLANS:
+            if plan in PAID_PLANS:
+                billing.plan = plan
+            billing.subscription_status = "active"
+
+    elif etype == "invoice.payment_failed":
+        if billing.plan in PAID_PLANS:
+            billing.subscription_status = "past_due"
 
     db.add(billing)
     db.commit()

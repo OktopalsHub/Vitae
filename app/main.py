@@ -19,6 +19,7 @@ from app.auth import (
     google_oauth_client,
 )
 from app.config import assert_secure_settings, ensure_dirs, get_settings, project_path
+from app.csrf import CSRFMiddleware, cookie_secure_flag
 from app.db import init_db
 from app.routes import admin, auth_pages, billing, jobs, onboarding, profiles, settings
 from app.scheduler import start_catalogue_sync_task
@@ -48,6 +49,7 @@ assert_secure_settings()
 init_db()
 
 app = FastAPI(title="Vitae", lifespan=lifespan)
+app.add_middleware(CSRFMiddleware)
 templates = Jinja2Templates(directory=str(project_path("app", "templates")))
 templates.env.filters["path_quote"] = lambda value: quote(str(value), safe="")
 templates.env.filters["safe_http_url"] = safe_http_url
@@ -57,7 +59,7 @@ static_dir.mkdir(exist_ok=True)
 app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 
 settings_cfg = get_settings()
-_oauth_cookie_secure = settings_cfg.oauth_redirect_base.startswith("https")
+_oauth_cookie_secure = cookie_secure_flag()
 
 app.include_router(
     fastapi_users.get_auth_router(auth_backend),
@@ -81,7 +83,7 @@ if google_oauth_client:
             google_oauth_client,
             auth_backend,
             settings_cfg.secret_key,
-            associate_by_email=True,
+            associate_by_email=False,
             is_verified_by_default=True,
             redirect_url=f"{settings_cfg.oauth_redirect_base.rstrip('/')}/auth/google/callback",
             csrf_token_cookie_secure=_oauth_cookie_secure,
@@ -108,7 +110,7 @@ if github_oauth_client:
             github_oauth_client,
             auth_backend,
             settings_cfg.secret_key,
-            associate_by_email=True,
+            associate_by_email=False,
             is_verified_by_default=True,
             redirect_url=f"{settings_cfg.oauth_redirect_base.rstrip('/')}/auth/github/callback",
             csrf_token_cookie_secure=_oauth_cookie_secure,

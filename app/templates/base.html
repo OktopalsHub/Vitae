@@ -77,9 +77,25 @@
   </div>
 
   <script>
+    window.__CSRF__ = {{ (csrf_token or '')|tojson }};
     (function () {
       const banner = document.getElementById("working");
       const header = document.getElementById("siteHeader");
+      function injectCsrf(form) {
+        if (!form || (form.method || "get").toLowerCase() !== "post") return;
+        let input = form.querySelector('input[name="csrf_token"]');
+        if (!input) {
+          input = document.createElement("input");
+          input.type = "hidden";
+          input.name = "csrf_token";
+          form.appendChild(input);
+        }
+        if (window.__CSRF__) input.value = window.__CSRF__;
+      }
+      document.querySelectorAll("form").forEach(injectCsrf);
+      document.addEventListener("submit", function (e) {
+        if (e.target && e.target.tagName === "FORM") injectCsrf(e.target);
+      }, true);
       function busy(on) {
         if (!banner) return;
         banner.classList.toggle("show", !!on);

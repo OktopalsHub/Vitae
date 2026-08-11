@@ -66,10 +66,14 @@ Then **Admin → Sync now** once (or wait for the hourly catalogue sync).
 
 ### Plans (Bachs)
 
-| Plan | NG | Outside NG | Unlocks |
-|------|----|------------|---------|
+Billing is **per profile**. Use **four** sandbox recurring products:
+
+| Plan | Nigeria (NGN) | International (USD) | Unlocks |
+|------|---------------|---------------------|---------|
 | BYOK | ₦2,000 / mo | $5 / mo | Full job list; AI with your key |
 | Platform AI | ₦5,000 / mo | $10 / mo | Full job list; platform LLM |
+
+Set `BACHS_PRODUCT_BYOK_NG`, `BACHS_PRODUCT_PLATFORM_NG`, `BACHS_PRODUCT_BYOK_INTL`, `BACHS_PRODUCT_PLATFORM_INTL`. Enable `TRUST_EDGE_GEO=1` in Cloud so NG visitors get the Naira products.
 
 AI needs subscription status `active` / `trialing`. BYOK also needs a saved LLM key in Settings.
 

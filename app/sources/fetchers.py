@@ -440,40 +440,39 @@ async def ingest_pasted_job(
     final_url = url.strip()
 
     if final_url and not final_desc:
-        headers = dict(_BROWSER_HEADERS)
-        async with httpx.AsyncClient(timeout=30.0, headers=headers, follow_redirects=True) as client:
-            try:
-                resp = await client.get(final_url)
-                resp.raise_for_status()
-                html = resp.text
-                posted = _parse_jobposting_jsonld(html)
-                if posted.get("title") and not final_title:
-                    final_title = posted["title"]
-                if posted.get("company") and not final_company:
-                    final_company = posted["company"]
-                if posted.get("location") and not final_location:
-                    final_location = posted["location"]
-                if posted.get("description"):
-                    final_desc = posted["description"]
+        from app.ssrf import fetch_public_url
 
-                soup = BeautifulSoup(html, "lxml")
-                for tag in soup(["script", "style", "noscript"]):
-                    tag.decompose()
-                og_title = soup.find("meta", property="og:title")
-                if og_title and og_title.get("content") and not final_title:
-                    final_title = og_title["content"].strip()
-                page_title = soup.title.string if soup.title and soup.title.string else ""
-                if not final_title and page_title:
-                    final_title = page_title.strip()
-                if not final_desc:
-                    main = soup.find("main") or soup.find("article") or soup.body
-                    final_desc = re.sub(
-                        r"\s+", " ", (main.get_text(" ", strip=True) if main else "")
-                    )[:12000]
-                if not final_company:
-                    final_company = _company_from_host(final_url)
-            except Exception as exc:
-                final_desc = f"(Could not fetch URL: {exc}) {final_desc}".strip()
+        headers = dict(_BROWSER_HEADERS)
+        try:
+            html = await fetch_public_url(final_url, headers=headers, timeout=30.0)
+            posted = _parse_jobposting_jsonld(html)
+            if posted.get("title") and not final_title:
+                final_title = posted["title"]
+            if posted.get("company") and not final_company:
+                final_company = posted["company"]
+            if posted.get("location") and not final_location:
+                final_location = posted["location"]
+            if posted.get("description"):
+                final_desc = posted["description"]
+
+            soup = BeautifulSoup(html, "lxml")
+            for tag in soup(["script", "style", "noscript"]):
+                tag.decompose()
+            og_title = soup.find("meta", property="og:title")
+            if og_title and og_title.get("content") and not final_title:
+                final_title = og_title["content"].strip()
+            page_title = soup.title.string if soup.title and soup.title.string else ""
+            if not final_title and page_title:
+                final_title = page_title.strip()
+            if not final_desc:
+                main = soup.find("main") or soup.find("article") or soup.body
+                final_desc = re.sub(
+                    r"\s+", " ", (main.get_text(" ", strip=True) if main else "")
+                )[:12000]
+            if not final_company:
+                final_company = _company_from_host(final_url)
+        except Exception as exc:  # noqa: BLE001
+            raise ValueError(f"Could not fetch URL safely: {exc}") from exc
 
     if not final_title:
         final_title = "Pasted Job"

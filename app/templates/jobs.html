@@ -65,12 +65,16 @@
       {% else %}
       <a class="job-row__link" href="/billing?flash=Upgrade%20to%20unlock%20more%20matched%20roles." target="_blank" rel="noopener">
       {% endif %}
-        <span class="job-row__score" aria-label="{{ '%.0f'|format(job.match_score) }} percent match">{{ '%.0f'|format(job.match_score) }}</span>
+        <span class="job-row__score" aria-label="{% if row.blurred %}Locked match{% else %}{{ '%.0f'|format(job.match_score) }} percent match{% endif %}">{% if row.blurred %}··{% else %}{{ '%.0f'|format(job.match_score) }}{% endif %}</span>
         <span class="job-row__body">
-          <span class="job-row__title {% if row.blurred %}blur-text{% endif %}">{{ job.title }}</span>
-          <span class="job-row__meta {% if row.blurred %}blur-text{% endif %}">
-            {{ job.company or "Company TBA" }}
-            {% if job.location %}<span class="dot">·</span>{{ job.location }}{% endif %}
+          <span class="job-row__title">{% if row.blurred %}Locked role{% else %}{{ job.title }}{% endif %}</span>
+          <span class="job-row__meta">
+            {% if row.blurred %}
+              Upgrade to view company &amp; location
+            {% else %}
+              {{ job.company or "Company TBA" }}
+              {% if job.location %}<span class="dot">·</span>{{ job.location }}{% endif %}
+            {% endif %}
           </span>
         </span>
         {% if row.blurred %}

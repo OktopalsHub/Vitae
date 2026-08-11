@@ -29,6 +29,10 @@
   </div>
 </div>
 
+{% if checkout_note %}
+<p class="meta" style="margin:0 0 var(--s4)">{{ checkout_note }}</p>
+{% endif %}
+
 <div
   class="billing-plans"
   data-billing-region="{{ region }}"
@@ -54,24 +58,4 @@
   </div>
 </div>
 {% endif %}
-{% endblock %}
-
-{% block scripts %}
-<script>
-(function () {
-  var root = document.querySelector("[data-billing-region]");
-  if (!root || root.dataset.regionSource !== "default") return;
-  var langs = navigator.languages || [navigator.language || ""];
-  var tz = "";
-  try { tz = Intl.DateTimeFormat().resolvedOptions().timeZone || ""; } catch (e) {}
-  var isNg = tz === "Africa/Lagos" || langs.some(function (l) {
-    var t = String(l || "").toLowerCase().replace("_", "-");
-    return t === "ng" || t.slice(-3) === "-ng";
-  });
-  var region = isNg ? "ng" : "intl";
-  if (region === root.dataset.billingRegion) return;
-  document.cookie = "vitae_region=" + region + "; path=/; max-age=31536000; samesite=lax";
-  window.location.reload();
-})();
-</script>
 {% endblock %}

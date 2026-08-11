@@ -115,23 +115,6 @@
 {% block scripts %}
 <script>
 (function () {
-  var pricing = document.querySelector("[data-pricing]");
-  if (pricing && pricing.dataset.regionSource === "default") {
-    var langs = navigator.languages || [navigator.language || ""];
-    var tz = "";
-    try { tz = Intl.DateTimeFormat().resolvedOptions().timeZone || ""; } catch (e) {}
-    var isNg = tz === "Africa/Lagos" || langs.some(function (l) {
-      var t = String(l || "").toLowerCase().replace("_", "-");
-      return t === "ng" || t.slice(-3) === "-ng";
-    });
-    var byok = pricing.getAttribute("data-byok-" + (isNg ? "ng" : "intl"));
-    var platform = pricing.getAttribute("data-platform-" + (isNg ? "ng" : "intl"));
-    var byokEl = pricing.querySelector('[data-price="byok"]');
-    var platformEl = pricing.querySelector('[data-price="platform"]');
-    if (byokEl && byok) byokEl.textContent = byok;
-    if (platformEl && platform) platformEl.textContent = platform;
-  }
-
   var mock = document.getElementById("heroMock");
   if (!mock) return;
   if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;

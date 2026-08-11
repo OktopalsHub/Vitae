@@ -13,10 +13,12 @@ from fastapi_users.authentication import (
 from fastapi_users.db import SQLAlchemyUserDatabase
 from httpx_oauth.clients.github import GitHubOAuth2
 from httpx_oauth.clients.google import GoogleOAuth2
+from pydantic import BaseModel, ConfigDict, EmailStr, Field
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import Session
 
 from app.config import database_url, get_settings
+from app.csrf import cookie_secure_flag
 from app.db import SessionLocal
 from app.models import OAuthAccount, User, UserRole
 from app.roles import apply_role, normalize_role
@@ -42,11 +44,23 @@ class UserRead(schemas.BaseUser[uuid.UUID]):
     role: str = UserRole.BASIC.value
 
 
-class UserCreate(schemas.BaseUserCreate):
+class UserCreate(BaseModel):
+    """Public registration — no is_superuser / is_verified / role (console-proof)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    email: EmailStr
+    password: str = Field(min_length=8, max_length=128)
     full_name: str = ""
 
 
-class UserUpdate(schemas.BaseUserUpdate):
+class UserUpdate(BaseModel):
+    """Self-service profile update — privilege fields are not accepted."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    password: str | None = Field(default=None, min_length=8, max_length=128)
+    email: EmailStr | None = None
     full_name: str | None = None
 
 
@@ -60,25 +74,31 @@ class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
         safe: bool = False,
         request: Request | None = None,
     ) -> User:
-        # Always create as basic; ignore is_superuser / is_verified from clients.
-        user_create = UserCreate(
-            email=user_create.email,
-            password=user_create.password,
-            full_name=getattr(user_create, "full_name", "") or "",
+        # Rebuild from allowed fields only — ignore any privilege keys clients send.
+        email = getattr(user_create, "email", None)
+        password = getattr(user_create, "password", None)
+        if not email or not password:
+            raise ValueError("Email and password are required")
+        safe_create = schemas.BaseUserCreate(
+            email=email,
+            password=password,
             is_active=True,
             is_superuser=False,
             is_verified=True,
         )
-        user = await super().create(user_create, safe=True, request=request)
+        user = await super().create(safe_create, safe=True, request=request)
+        full_name = (getattr(user_create, "full_name", None) or "")[:255]
         apply_role(user, UserRole.BASIC.value)
         await self.user_db.update(
             user,
             {
-                "role": user.role,
+                "role": UserRole.BASIC.value,
                 "is_superuser": False,
                 "is_verified": True,
+                "full_name": full_name,
             },
         )
+        user.full_name = full_name
         return user
 
     async def update(
@@ -88,28 +108,28 @@ class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
         safe: bool = False,
         request: Request | None = None,
     ) -> User:
-        # Never allow privilege escalation via fastapi-users flags; roles change via /admin only.
+        # Never allow privilege escalation via API / console payloads.
         payload: dict = {}
         if getattr(user_update, "password", None) is not None:
             payload["password"] = user_update.password
         if getattr(user_update, "email", None) is not None:
             payload["email"] = user_update.email
-        if getattr(user_update, "full_name", None) is not None:
-            payload["full_name"] = user_update.full_name
-        stripped = UserUpdate(**payload)
+        stripped = schemas.BaseUserUpdate(**payload)
         updated = await super().update(stripped, user, safe=True, request=request)
         role = normalize_role(getattr(updated, "role", None) or getattr(user, "role", None))
+        full_name = getattr(user_update, "full_name", None)
+        updates: dict = {
+            "role": role,
+            "is_superuser": False,
+            "is_verified": True,
+        }
+        if full_name is not None:
+            updates["full_name"] = str(full_name)[:255]
+            updated.full_name = updates["full_name"]
         updated.role = role
         updated.is_superuser = False
         updated.is_verified = True
-        await self.user_db.update(
-            updated,
-            {
-                "role": role,
-                "is_superuser": False,
-                "is_verified": True,
-            },
-        )
+        await self.user_db.update(updated, updates)
         return updated
 
     async def on_after_register(self, user: User, request: Request | None = None) -> None:
@@ -144,7 +164,7 @@ async def get_user_manager(
 cookie_transport = CookieTransport(
     cookie_name="jobmatch_auth",
     cookie_max_age=SESSION_MAX_AGE,
-    cookie_secure=get_settings().oauth_redirect_base.startswith("https"),
+    cookie_secure=cookie_secure_flag(),
     cookie_httponly=True,
     cookie_samesite="lax",
 )
@@ -179,7 +199,3 @@ github_oauth_client = (
     if settings.github_oauth_client_id and settings.github_oauth_client_secret
     else None
 )
-
-
-def sync_user_from_db(db: Session, user_id: uuid.UUID) -> User | None:
-    return db.query(User).filter(User.id == user_id).one_or_none()

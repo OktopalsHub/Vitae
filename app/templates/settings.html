@@ -79,7 +79,7 @@
 
   <h3 class="rule-title">Master CV</h3>
   <p style="margin:0 0 var(--s2)"><strong>{{ profile_name }}</strong> · <span class="meta">{{ skill_count }} skills parsed</span></p>
-  <p class="meta">{{ master_cv }}</p>
+  <p class="meta">{% if master_cv %}CV on file{% else %}No CV uploaded yet{% endif %}</p>
   <form method="post" action="/settings/upload-cv" enctype="multipart/form-data" class="form-grid" data-busy>
     <label>Upload PDF or DOCX<input type="file" name="file" accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document" required /></label>
     <div><button class="btn btn-primary" type="submit">Upload &amp; re-confirm</button></div>

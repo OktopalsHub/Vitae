@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.apply_assist import ensure_apply_copy, load_job_draft, save_job_draft
 from app.auth import SESSION_MAX_AGE, get_jwt_strategy, optional_current_user
+from app.csrf import cookie_secure_flag, csrf_token_for_template
 from app.config import api_key_status, get_settings, uses_sqlite
 from app.db import get_db
 from app.models import User
@@ -80,7 +81,7 @@ def redirect_with_auth_cookie(url: str, auth_response) -> RedirectResponse:
 async def _slide_session_cookie(response: Response, user: User) -> None:
     """Re-issue JWT cookie so active users stay signed in (sliding ~30 days)."""
     token = await get_jwt_strategy().write_token(user)
-    secure = get_settings().oauth_redirect_base.startswith("https")
+    secure = cookie_secure_flag()
     response.set_cookie(
         key="jobmatch_auth",
         value=token,
@@ -178,6 +179,7 @@ def template_ctx(
         "profile_ready": profile_ready,
         "active_profile": active_profile,
         "nav_profiles": nav_profiles,
+        "csrf_token": csrf_token_for_template(request) if request is not None else "",
         "google_oauth": bool(google_oauth_client),
         "github_oauth": bool(github_oauth_client),
         "user_role": user_role(user) if user else "basic",

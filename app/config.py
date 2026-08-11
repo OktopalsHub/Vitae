@@ -36,10 +36,14 @@ class Settings(BaseSettings):
     bachs_api_base: str = ""
     bachs_webhook_secret: str = ""
     bachs_webhook_dev_accept: bool = False
+    # Four Bachs monthly products: NG = NGN ₦2k/₦5k · intl = USD $5/$10
     bachs_product_byok_ng: str = ""
     bachs_product_platform_ng: str = ""
     bachs_product_byok_intl: str = ""
     bachs_product_platform_intl: str = ""
+    # Cloud only: CF / CloudFront / Vercel country → NG (NGN) vs intl (USD) products.
+    # Leave false locally so clients cannot spoof NG rates.
+    trust_edge_geo: bool = False
     max_upload_bytes: int = 8 * 1024 * 1024
 
     model_config = {"env_file": str(ROOT_DIR / ".env"), "extra": "ignore"}

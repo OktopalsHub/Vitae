@@ -90,6 +90,8 @@ def can_open_listing(db: Session, user: User, listing_id: int) -> tuple[bool, st
         and listing.owner_user_id == user.id
     ):
         return True, "private"
+    if not listing.is_active and listing.visibility == ListingVisibility.PUBLIC.value:
+        return False, "This listing is no longer open."
     if has_full_job_access(db, user):
         return True, "full"
     if listing_id in free_clear_listing_ids(db, user):
@@ -115,7 +117,7 @@ def detect_billing_region(
     request_headers: dict[str, str] | None = None,
     cookies: dict[str, str] | None = None,
 ) -> str:
-    """Prefer edge geo headers; fall back to Accept-Language, then region cookie."""
+    """Server-side region for pricing. Client cookies/locale cannot set NG pricing."""
     region, _ = detect_billing_region_detail(request_headers, cookies)
     return region
 
@@ -126,27 +128,28 @@ def detect_billing_region_detail(
 ) -> tuple[str, str]:
     """
     Returns (region, source).
-    source: 'geo' | 'locale' | 'cookie' | 'default'
+
+    Pricing never trusts Accept-Language, vitae_region cookie, or spoofable
+    X-Country-Code. Edge geo headers are used only when TRUST_EDGE_GEO=1
+    (Cloudflare / CloudFront / Vercel set these; clients cannot).
+    Otherwise default to intl.
     """
+    from app.config import get_settings
+
+    _ = cookies  # intentionally unused — never trust client region cookie for pricing
+    s = get_settings()
+    if not bool(getattr(s, "trust_edge_geo", False)):
+        return BillingRegion.INTL.value, "default"
+
     headers = {k.lower(): v for k, v in (request_headers or {}).items()}
+    # Only headers typically injected by the edge — not X-Country-Code.
     country = (
         headers.get("cf-ipcountry")
         or headers.get("cloudfront-viewer-country")
         or headers.get("x-vercel-ip-country")
-        or headers.get("x-country-code")
         or ""
     ).strip().upper()
     if country and country not in {"XX", "T1", "A1", "A2", "O1"}:
         region = BillingRegion.NG.value if country == "NG" else BillingRegion.INTL.value
         return region, "geo"
-
-    accept = headers.get("accept-language") or ""
-    for part in accept.split(","):
-        tag = part.split(";")[0].strip().lower().replace("_", "-")
-        if tag == "ng" or tag.endswith("-ng"):
-            return BillingRegion.NG.value, "locale"
-
-    cookie = ((cookies or {}).get("vitae_region") or "").strip().lower()
-    if cookie in {BillingRegion.NG.value, BillingRegion.INTL.value}:
-        return cookie, "cookie"
     return BillingRegion.INTL.value, "default"

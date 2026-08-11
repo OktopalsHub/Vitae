@@ -434,6 +434,8 @@ def get_user_job_card(db: Session, user: User, listing_id: int) -> JobCard | Non
             return None
     elif listing.visibility != ListingVisibility.PUBLIC.value:
         return None
+    elif not listing.is_active:
+        return None
     profile = load_user_profile_dict(db, user)
     cfg = load_user_settings(db, user)
     overlay = ensure_user_job(db, user, listing, profile=profile, cfg=cfg)
