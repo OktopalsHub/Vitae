@@ -21,6 +21,21 @@ engine = create_engine(
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 
 
+def _rename_user_table_to_users() -> None:
+    """Rename legacy fastapi-users table `user` → `users` (Postgres reserved word)."""
+    insp = inspect(engine)
+    tables = set(insp.get_table_names())
+    if "users" in tables or "user" not in tables:
+        return
+    with engine.begin() as conn:
+        conn.execute(text('ALTER TABLE "user" RENAME TO users'))
+
+
+def _quote_ident(name: str) -> str:
+    """Quote SQL identifiers for ALTER TABLE / ADD COLUMN."""
+    return '"' + name.replace('"', '""') + '"'
+
+
 def _ensure_column(table: str, column: str, ddl_type: str) -> None:
     insp = inspect(engine)
     if table not in insp.get_table_names():
@@ -29,20 +44,23 @@ def _ensure_column(table: str, column: str, ddl_type: str) -> None:
     if column in cols:
         return
     with engine.begin() as conn:
-        conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {ddl_type}"))
+        conn.execute(
+            text(
+                f"ALTER TABLE {_quote_ident(table)} "
+                f"ADD COLUMN {_quote_ident(column)} {ddl_type}"
+            )
+        )
 
 
 def migrate_schema() -> None:
     """Additive column patches for SQLite/Postgres without Alembic."""
-    dialect = engine.dialect.name
-    bool_type = "BOOLEAN DEFAULT FALSE" if dialect != "sqlite" else "BOOLEAN DEFAULT 0"
-    _ensure_column("user", "role", "VARCHAR(32) DEFAULT 'basic'")
-    _ensure_column("user", "active_profile_id", "INTEGER")
+    _ensure_column("users", "role", "VARCHAR(32) DEFAULT 'basic'")
+    _ensure_column("users", "active_profile_id", "INTEGER")
     _ensure_column("job_listings", "closed_at", "TIMESTAMP")
     _ensure_column(
         "job_listings",
         "is_active",
-        "BOOLEAN DEFAULT TRUE" if dialect != "sqlite" else "BOOLEAN DEFAULT 1",
+        "BOOLEAN DEFAULT TRUE" if engine.dialect.name != "sqlite" else "BOOLEAN DEFAULT 1",
     )
     _ensure_column("job_listings", "last_seen_at", "TIMESTAMP")
     _ensure_column("user_jobs", "profile_id", "INTEGER")
@@ -57,16 +75,16 @@ def migrate_schema() -> None:
 def _backfill_user_roles() -> None:
     """Normalize roles to basic / admin / super_admin (role is source of truth)."""
     insp = inspect(engine)
-    if "user" not in insp.get_table_names():
+    if "users" not in insp.get_table_names():
         return
-    cols = {c["name"] for c in insp.get_columns("user")}
+    cols = {c["name"] for c in insp.get_columns("users")}
     if "role" not in cols:
         return
     with engine.begin() as conn:
         conn.execute(
             text(
                 """
-                UPDATE "user"
+                UPDATE users
                 SET role = 'super_admin'
                 WHERE COALESCE(role, '') IN ('', 'user', 'basic')
                   AND is_superuser = true
@@ -76,14 +94,14 @@ def _backfill_user_roles() -> None:
         conn.execute(
             text(
                 """
-                UPDATE "user"
+                UPDATE users
                 SET role = 'basic'
                 WHERE role IS NULL OR role = '' OR role = 'user'
                 """
             )
         )
-        conn.execute(text('UPDATE "user" SET is_superuser = false'))
-        conn.execute(text('UPDATE "user" SET is_verified = true'))
+        conn.execute(text("UPDATE users SET is_superuser = false"))
+        conn.execute(text("UPDATE users SET is_verified = true"))
 
 
 def _migrate_profiles_from_legacy() -> None:
@@ -121,17 +139,18 @@ def _migrate_profiles_from_legacy() -> None:
             )
 
         # Wire active_profile_id (SQLite-safe: min profile id per user)
-        conn.execute(
-            text(
-                """
-                UPDATE "user"
-                SET active_profile_id = (
-                    SELECT MIN(p.id) FROM profiles p WHERE p.user_id = "user".id
+        if "users" in tables:
+            conn.execute(
+                text(
+                    """
+                    UPDATE users
+                    SET active_profile_id = (
+                        SELECT MIN(p.id) FROM profiles p WHERE p.user_id = users.id
+                    )
+                    WHERE active_profile_id IS NULL
+                    """
                 )
-                WHERE active_profile_id IS NULL
-                """
             )
-        )
 
         if "user_jobs" in tables and any(
             c["name"] == "profile_id" for c in insp.get_columns("user_jobs")
@@ -215,7 +234,7 @@ def _migrate_user_billing_to_profile_billing() -> None:
                 WHERE profile_billing.user_id = ub.user_id
                   AND profile_billing.profile_id = (
                       SELECT COALESCE(
-                          (SELECT active_profile_id FROM "user" u WHERE u.id = ub.user_id),
+                          (SELECT active_profile_id FROM users u WHERE u.id = ub.user_id),
                           (SELECT MIN(p.id) FROM profiles p WHERE p.user_id = ub.user_id)
                       )
                   )
@@ -261,7 +280,7 @@ def _migrate_user_billing_to_profile_billing() -> None:
                     updated_at = CURRENT_TIMESTAMP
                 WHERE profile_id = (
                     SELECT COALESCE(
-                        (SELECT active_profile_id FROM "user" u WHERE u.id = profile_billing.user_id),
+                        (SELECT active_profile_id FROM users u WHERE u.id = profile_billing.user_id),
                         (SELECT MIN(p.id) FROM profiles p WHERE p.user_id = profile_billing.user_id)
                     )
                 )
@@ -324,7 +343,7 @@ def _migrate_overlay_uniques_to_profile() -> None:
                         created_at DATETIME NOT NULL,
                         updated_at DATETIME NOT NULL,
                         CONSTRAINT uq_profile_listing UNIQUE (profile_id, listing_id),
-                        FOREIGN KEY(user_id) REFERENCES user (id) ON DELETE CASCADE,
+                        FOREIGN KEY(user_id) REFERENCES users (id) ON DELETE CASCADE,
                         FOREIGN KEY(profile_id) REFERENCES profiles (id) ON DELETE CASCADE,
                         FOREIGN KEY(listing_id) REFERENCES job_listings (id) ON DELETE CASCADE
                     )
@@ -379,7 +398,7 @@ def _migrate_overlay_uniques_to_profile() -> None:
                                 answers_json TEXT NOT NULL,
                                 updated_at DATETIME NOT NULL,
                                 CONSTRAINT uq_profile_draft_listing UNIQUE (profile_id, listing_id),
-                                FOREIGN KEY(user_id) REFERENCES user (id) ON DELETE CASCADE,
+                                FOREIGN KEY(user_id) REFERENCES users (id) ON DELETE CASCADE,
                                 FOREIGN KEY(profile_id) REFERENCES profiles (id) ON DELETE CASCADE,
                                 FOREIGN KEY(listing_id) REFERENCES job_listings (id) ON DELETE CASCADE
                             )
@@ -419,6 +438,8 @@ def _migrate_overlay_uniques_to_profile() -> None:
 
 
 def init_db() -> None:
+    # Rename before create_all so we don't create an empty `users` beside legacy `user`.
+    _rename_user_table_to_users()
     Base.metadata.create_all(bind=engine)
     migrate_schema()
 

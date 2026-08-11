@@ -49,6 +49,9 @@ class UserRole(str, Enum):
 
 
 class User(SQLAlchemyBaseUserTableUUID, Base):
+    # Plural — Postgres reserves USER; fastapi-users default is "user".
+    __tablename__ = "users"
+
     full_name: Mapped[str] = mapped_column(String(255), default="", nullable=False)
     role: Mapped[str] = mapped_column(String(32), default=UserRole.BASIC.value, index=True)
     # Points at profiles.id — each profile has its own subscription (ProfileBilling).
@@ -59,7 +62,10 @@ class User(SQLAlchemyBaseUserTableUUID, Base):
 
 
 class OAuthAccount(SQLAlchemyBaseOAuthAccountTableUUID, Base):
-    pass
+    # Parent mixin hardcodes ForeignKey("user.id"); keep in sync with User.__tablename__.
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("users.id", ondelete="cascade"), nullable=False
+    )
 
 
 class JobListing(Base):
@@ -85,7 +91,7 @@ class JobListing(Base):
     scope_key: Mapped[str] = mapped_column(String(64), default="public", index=True)
     owner_user_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         Uuid(as_uuid=True),
-        ForeignKey("user.id", ondelete="cascade"),
+        ForeignKey("users.id", ondelete="cascade"),
         nullable=True,
         index=True,
     )
@@ -108,7 +114,7 @@ class Profile(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     user_id: Mapped[uuid.UUID] = mapped_column(
-        Uuid(as_uuid=True), ForeignKey("user.id", ondelete="cascade"), index=True
+        Uuid(as_uuid=True), ForeignKey("users.id", ondelete="cascade"), index=True
     )
     label: Mapped[str] = mapped_column(String(128), default="Default")
     full_name: Mapped[str] = mapped_column(String(255), default="")
@@ -146,7 +152,7 @@ class UserJob(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     user_id: Mapped[uuid.UUID] = mapped_column(
-        Uuid(as_uuid=True), ForeignKey("user.id", ondelete="cascade"), index=True
+        Uuid(as_uuid=True), ForeignKey("users.id", ondelete="cascade"), index=True
     )
     profile_id: Mapped[Optional[int]] = mapped_column(
         Integer, ForeignKey("profiles.id", ondelete="cascade"), nullable=True, index=True
@@ -171,7 +177,7 @@ class UserSettings(Base):
     __tablename__ = "user_settings"
 
     user_id: Mapped[uuid.UUID] = mapped_column(
-        Uuid(as_uuid=True), ForeignKey("user.id", ondelete="cascade"), primary_key=True
+        Uuid(as_uuid=True), ForeignKey("users.id", ondelete="cascade"), primary_key=True
     )
     settings_json: Mapped[str] = mapped_column(Text, default="{}")
 
@@ -182,7 +188,7 @@ class ApplyDraft(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     user_id: Mapped[uuid.UUID] = mapped_column(
-        Uuid(as_uuid=True), ForeignKey("user.id", ondelete="cascade"), index=True
+        Uuid(as_uuid=True), ForeignKey("users.id", ondelete="cascade"), index=True
     )
     profile_id: Mapped[Optional[int]] = mapped_column(
         Integer, ForeignKey("profiles.id", ondelete="cascade"), nullable=True, index=True
@@ -206,7 +212,7 @@ class ProfileBilling(Base):
         Integer, ForeignKey("profiles.id", ondelete="cascade"), primary_key=True
     )
     user_id: Mapped[uuid.UUID] = mapped_column(
-        Uuid(as_uuid=True), ForeignKey("user.id", ondelete="cascade"), index=True
+        Uuid(as_uuid=True), ForeignKey("users.id", ondelete="cascade"), index=True
     )
     plan: Mapped[str] = mapped_column(String(32), default=BillingPlan.NONE.value, index=True)
     billing_region: Mapped[str] = mapped_column(String(16), default=BillingRegion.NG.value)
