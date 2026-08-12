@@ -36,13 +36,10 @@ def test_limit_zero_disables():
 
 
 def test_enforce_sets_redirect_path():
-    enforce("auth", user_id="u1", redirect_path="/login")
-    # Exhaust limit (default 10)
-    from app.config import get_settings
+    from app.rate_limit import limit_for
 
-    get_settings.cache_clear()
-    limit = get_settings().rate_limit_auth or 10
     reset_rate_limits()
+    limit = limit_for("auth")
     for _ in range(limit):
         enforce("auth", user_id="u2", redirect_path="/login")
     with pytest.raises(RateLimitExceeded) as ei:

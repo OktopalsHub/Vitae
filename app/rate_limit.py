@@ -9,11 +9,15 @@ from typing import Any
 
 from fastapi import Request
 
-from app.config import get_settings
-
 _lock = threading.Lock()
 # key -> (window_start_epoch, count)
 _buckets: dict[str, tuple[float, int]] = {}
+
+# Hardcoded buckets (requests per 60s). Not env-tunable.
+_LIMIT_AUTH = 10
+_LIMIT_PASTE = 20
+_LIMIT_AI = 15
+_LIMIT_DEFAULT = 60
 
 
 class RateLimitExceeded(Exception):
@@ -54,14 +58,13 @@ def client_ip(request: Request) -> str:
 
 
 def limit_for(scope: str) -> int:
-    s = get_settings()
     if scope == "auth":
-        return int(s.rate_limit_auth or 10)
+        return _LIMIT_AUTH
     if scope == "paste":
-        return int(s.rate_limit_paste or 20)
+        return _LIMIT_PASTE
     if scope == "ai":
-        return int(s.rate_limit_ai or 15)
-    return 60
+        return _LIMIT_AI
+    return _LIMIT_DEFAULT
 
 
 def enforce(

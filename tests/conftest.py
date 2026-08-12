@@ -16,9 +16,9 @@ os.environ["APP_ENV"] = "test"
 os.environ["SECRET_KEY"] = "test-secret-key-for-pytest-not-default!!"
 os.environ["FERNET_SECRET_KEY"] = "test-fernet-key-for-pytest-not-default!!"
 os.environ["BACHS_WEBHOOK_SECRET"] = "test-webhook-secret"
-os.environ["BACHS_WEBHOOK_DEV_ACCEPT"] = "0"
 os.environ["CATALOGUE_SYNC_DISABLED"] = "1"
 os.environ["USER_RANK_REFRESH_DISABLED"] = "1"
+# Tests: force intl (no edge) unless a test opts into geo.
 os.environ["TRUST_EDGE_GEO"] = "0"
 
 from fastapi.testclient import TestClient  # noqa: E402

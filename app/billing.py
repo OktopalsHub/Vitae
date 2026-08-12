@@ -166,14 +166,10 @@ def verify_bachs_webhook(
     env = (s.app_env or "").strip().lower()
     prod_like = env in {"production", "prod", "cloud"}
     if not secret:
+        # Unsigned only in local/test when no secret is configured — never staging/cloud.
         if prod_like:
             return False
-        return bool(s.bachs_webhook_dev_accept) and env in {
-            "development",
-            "dev",
-            "test",
-            "",
-        }
+        return env in {"development", "dev", "test", ""}
     if not signature_header or not timestamp_header:
         return False
     try:

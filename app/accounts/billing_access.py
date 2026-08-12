@@ -185,15 +185,14 @@ def detect_billing_region_detail(
     Returns (region, source).
 
     Pricing never trusts Accept-Language, vitae_region cookie, or spoofable
-    X-Country-Code. Edge geo headers are used only when TRUST_EDGE_GEO=1
-    (Cloudflare / CloudFront / Vercel set these; clients cannot).
-    Otherwise default to intl.
+    X-Country-Code. Edge geo headers (CF / CloudFront / Vercel) are trusted by
+    default; set TRUST_EDGE_GEO=0 to ignore them (e.g. local without a real edge).
     """
     from app.config import get_settings
 
     _ = cookies  # intentionally unused — never trust client region cookie for pricing
     s = get_settings()
-    if not bool(getattr(s, "trust_edge_geo", False)):
+    if not bool(getattr(s, "trust_edge_geo", True)):
         return BillingRegion.INTL.value, "default"
 
     headers = {k.lower(): v for k, v in (request_headers or {}).items()}

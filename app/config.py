@@ -40,22 +40,17 @@ class Settings(BaseSettings):
     bachs_api_key: str = ""
     bachs_api_base: str = ""
     bachs_webhook_secret: str = ""
-    bachs_webhook_dev_accept: bool = False
     # Four Bachs monthly products: NG = NGN ₦2k/₦5k · intl = USD $5/$10
     bachs_product_byok_ng: str = ""
     bachs_product_platform_ng: str = ""
     bachs_product_byok_intl: str = ""
     bachs_product_platform_intl: str = ""
-    # Cloud only: CF / CloudFront / Vercel country → NG (NGN) vs intl (USD) products.
-    # Leave false locally so clients cannot spoof NG rates.
-    trust_edge_geo: bool = False
+    # Default on for staging/Cloud (CF / Vercel country → NG vs intl products).
+    # Set TRUST_EDGE_GEO=0 locally to ignore country headers (spoofable without a real edge).
+    trust_edge_geo: bool = True
     max_upload_bytes: int = 8 * 1024 * 1024
     # Separate from SECRET_KEY so JWT rotation does not invalidate BYOK ciphertext.
     fernet_secret_key: str = ""
-    # In-process rate limits (requests per 60s). Set 0 to disable a bucket.
-    rate_limit_auth: int = 10
-    rate_limit_paste: int = 20
-    rate_limit_ai: int = 15
 
     model_config = {"env_file": str(ROOT_DIR / ".env"), "extra": "ignore"}
 

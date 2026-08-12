@@ -31,7 +31,7 @@ templates = Jinja2Templates(directory=str(project_path("app", "templates")))
 
 
 def _sync_region_from_request(request: Request, billing: ProfileBilling, db: Session) -> tuple[str, str]:
-    """Price from trusted edge geo only (see TRUST_EDGE_GEO) — never client cookies."""
+    """Price from trusted edge geo when TRUST_EDGE_GEO is on (default) — never client cookies."""
     region, source = detect_billing_region_detail(dict(request.headers), dict(request.cookies))
     if billing.billing_region != region:
         billing.billing_region = region
