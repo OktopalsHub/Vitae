@@ -8,7 +8,7 @@
 </div>
 
 <div class="panel" style="max-width:32rem">
-  {% if error %}<div class="error">{{ error }}</div>{% endif %}
+  {% if error %}<div class="error" role="alert">{{ error }}</div>{% endif %}
   <form method="post" action="/onboarding" enctype="multipart/form-data" class="form-grid" data-busy>
     <label style="grid-column:1/-1">Resume file
       <input type="file" name="file" accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document" required />

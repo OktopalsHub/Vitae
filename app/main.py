@@ -21,11 +21,11 @@ from app.auth import (
     github_oauth_client,
     google_oauth_client,
 )
-from app.config import assert_secure_settings, ensure_dirs, get_settings, project_path
+from app.config import assert_secure_settings, ensure_dirs, get_settings, project_path, warn_site_settings
 from app.csrf import CSRFMiddleware, cookie_secure_flag
 from app.db import init_db
 from app.rate_limit import RateLimitExceeded, enforce
-from app.routes import admin, auth_pages, billing, jobs, onboarding, profiles, settings
+from app.routes import admin, auth_pages, billing, jobs, onboarding, profiles, settings, site
 from app.scheduler import start_catalogue_sync_task
 from app.web_helpers import LoginRequired, OnboardingRequired, ForbiddenFlash, safe_http_url
 
@@ -60,6 +60,7 @@ class AuthApiRateLimitMiddleware(BaseHTTPMiddleware):
 async def lifespan(_app: FastAPI):
     ensure_dirs()
     assert_secure_settings()
+    warn_site_settings()
     init_db()
     tasks = start_catalogue_sync_task()
     try:
@@ -177,6 +178,7 @@ app.include_router(settings.router)
 app.include_router(profiles.router)
 app.include_router(billing.router)
 app.include_router(admin.router)
+app.include_router(site.router)
 
 
 @app.exception_handler(LoginRequired)

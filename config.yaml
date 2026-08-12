@@ -81,13 +81,13 @@ greenhouse_boards:
   - intercom
   - coursera
   - figma
+  - twilio
 
 lever_boards:
   - Flex
-  - Netflix
-  - Shopify
-  - twilio
-  - brightmoney
+
+ashby_boards:
+  - "Scale Army Careers"
 
 exclude_bullet_patterns:
   - GeoIP
@@ -101,6 +101,8 @@ adzuna:
   results_per_page: 50
 
 sources:
+  ashby: true
+  bruntwork: true
   yc: true
   wellfound: true
   ziprecruiter: false

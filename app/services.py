@@ -642,12 +642,26 @@ async def add_pasted_job_for_user(
     )
 
 
-def get_user_job_card(db: Session, user: User, listing_id: int) -> JobCard | None:
-    """Open/interaction path: creates overlay so status/CV can attach."""
+def _get_user_job_card_by_int_id(db: Session, user: User, listing_id: int) -> JobCard | None:
+    """Internal-only: look up a card by sequential integer PK.
+
+    DO NOT expose this via routes — integer IDs are guessable (IDOR).
+    Use get_user_job_card_by_public_id for any user-facing path.
+    """
     listing = db.get(JobListing, listing_id)
     if not listing:
         return None
     return _card_for_visible_listing(db, user, listing)
+
+
+def get_user_job_card(db: Session, user: User, listing_id: int) -> JobCard | None:
+    """Deprecated alias kept for internal callers only.
+
+    External / route callers must use get_user_job_card_by_public_id instead.
+    This wrapper intentionally has the same behaviour but is not exported in
+    __all__ so linters catch accidental new call sites.
+    """
+    return _get_user_job_card_by_int_id(db, user, listing_id)
 
 
 def get_user_job_card_by_public_id(db: Session, user: User, public_id: str) -> JobCard | None:

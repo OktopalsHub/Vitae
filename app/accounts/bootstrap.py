@@ -128,6 +128,7 @@ def ensure_account(db: Session, user: User) -> None:
             "exclude_title_patterns": defaults.get("exclude_title_patterns") or [],
             "greenhouse_boards": defaults.get("greenhouse_boards") or [],
             "lever_boards": defaults.get("lever_boards") or [],
+            "ashby_boards": defaults.get("ashby_boards") or [],
             "sources": defaults.get("sources") or {},
             "wellfound_urls": defaults.get("wellfound_urls") or [],
             "djinni_urls": defaults.get("djinni_urls") or [],

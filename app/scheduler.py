@@ -51,23 +51,50 @@ async def run_catalogue_sync_once() -> dict:
 
 
 def run_user_rank_refresh_once() -> dict[str, int]:
-    """Rescore existing UserJob rows for every active user."""
-    db = SessionLocal()
-    try:
-        users = db.query(User).filter(User.is_active.is_(True)).all()
-        users_n = 0
-        overlays_n = 0
-        for user in users:
-            overlays_n += rescore_user_jobs(db, user)
+    """Rescore existing UserJob rows for every active user.
+
+    Uses a short-lived session per user so that:
+    - Lock contention is minimal (session closed before moving to next user).
+    - One user's failure does not abort the entire sweep.
+    """
+    users_n = 0
+    overlays_n = 0
+    errors_n = 0
+
+    # Fetch user IDs first in a separate short session, then process each user
+    # with its own session to limit lock scope and crash blast radius.
+    with SessionLocal() as id_db:
+        user_ids: list = [
+            uid for (uid,) in id_db.query(User.id).filter(User.is_active.is_(True)).all()
+        ]
+
+    for uid in user_ids:
+        db = SessionLocal()
+        try:
+            user = db.get(User, uid)
+            if user is None:
+                continue
+            n = rescore_user_jobs(db, user)
+            db.commit()
+            overlays_n += n
             users_n += 1
-        logger.info(
-            "user rank refresh users=%s overlays=%s",
-            users_n,
-            overlays_n,
-        )
-        return {"users": users_n, "overlays": overlays_n}
-    finally:
-        db.close()
+        except Exception:
+            logger.exception("user rank refresh failed for user %s", uid)
+            errors_n += 1
+            try:
+                db.rollback()
+            except Exception:
+                pass
+        finally:
+            db.close()
+
+    logger.info(
+        "user rank refresh users=%s overlays=%s errors=%s",
+        users_n,
+        overlays_n,
+        errors_n,
+    )
+    return {"users": users_n, "overlays": overlays_n, "errors": errors_n}
 
 
 async def catalogue_sync_loop() -> None:

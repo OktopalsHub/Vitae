@@ -15,11 +15,24 @@ def _fernet_from_secret(secret: str) -> Fernet:
 
 
 def _primary_secret() -> str:
+    from app.config import _is_test_env
+
     s = get_settings()
     fernet = (s.fernet_secret_key or "").strip()
     if fernet:
         return fernet
-    return (s.secret_key or "dev-insecure-secret-change-me").strip()
+    # In non-test environments FERNET_SECRET_KEY is required (assert_secure_settings
+    # enforces this at startup).  In tests fall back to secret_key so unit tests
+    # that set only SECRET_KEY still work.
+    secret = (s.secret_key or "").strip()
+    if secret:
+        return secret
+    if not _is_test_env():
+        raise RuntimeError(
+            "FERNET_SECRET_KEY (or SECRET_KEY as fallback) must be set. "
+            "Run assert_secure_settings() at startup to catch this earlier."
+        )
+    return "test-only-insecure-placeholder"
 
 
 def _legacy_secret() -> str | None:

@@ -8,7 +8,7 @@
     <h1>Create account</h1>
     <p class="meta">Use email and password, or continue with Google / GitHub — same email is one account.</p>
     {% if error %}
-      <div class="error">{{ error }}</div>
+      <div class="error" role="alert">{{ error }}</div>
     {% endif %}
     <form method="post" action="/register" class="form-grid" style="margin-top:var(--s4)">
       <label style="grid-column:1/-1">Email<input type="email" name="email" required autocomplete="email" /></label>

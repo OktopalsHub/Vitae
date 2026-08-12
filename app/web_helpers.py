@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 from app.apply_assist import ensure_apply_copy
 from app.auth import SESSION_MAX_AGE, get_jwt_strategy, optional_current_user
 from app.csrf import cookie_secure_flag, csrf_token_for_template
-from app.config import api_key_status, get_settings, uses_sqlite
+from app.config import api_key_status, get_settings, site_base_url, uses_sqlite
 from app.db import get_db
 from app.models import User
 from app.accounts import (
@@ -155,6 +155,16 @@ async def require_profile_ready(
     return user
 
 
+def canonical_url(request: Request) -> str:
+    """Absolute canonical URL for the current page (public SEO)."""
+    base = site_base_url()
+    path = request.url.path or "/"
+    if request.url.query:
+        # Drop tracking/query params from canonical — keep path only for app pages.
+        pass
+    return f"{base}{path}"
+
+
 def template_ctx(
     request: Request,
     user: User | None,
@@ -215,6 +225,8 @@ def template_ctx(
     from app.auth import github_oauth_client, google_oauth_client
     from app.roles import is_admin, is_super_admin, user_role
 
+    settings = get_settings()
+
     ctx = {
         "request": request,
         "user": user,
@@ -234,6 +246,9 @@ def template_ctx(
         "user_role": user_role(user) if user else "basic",
         "is_admin": is_admin(user),
         "is_super_admin": is_super_admin(user),
+        "canonical_url": canonical_url(request) if request is not None else site_base_url(),
+        "site_url": site_base_url(),
+        "google_site_verification": (settings.google_site_verification or "").strip(),
     }
     ctx.update(extra)
     return ctx

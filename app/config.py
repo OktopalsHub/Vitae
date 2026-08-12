@@ -26,8 +26,13 @@ class Settings(BaseSettings):
     app_port: int = 8765
     app_env: str = "development"
     database_url: str = "sqlite:///./data/jobs.db"
-    secret_key: str = "dev-insecure-secret-change-me-32b+"
+    # No default — must be set in .env.  Startup will raise if empty in non-test envs.
+    secret_key: str = ""
     oauth_redirect_base: str = "http://127.0.0.1:8765"
+    # Public site URL for canonical tags, sitemap, llms.txt (defaults to oauth_redirect_base).
+    site_url: str = ""
+    # Google Search Console HTML-tag verification content (meta content value only).
+    google_site_verification: str = ""
     google_oauth_client_id: str = ""
     google_oauth_client_secret: str = ""
     github_oauth_client_id: str = ""
@@ -55,7 +60,11 @@ class Settings(BaseSettings):
     model_config = {"env_file": str(ROOT_DIR / ".env"), "extra": "ignore"}
 
 
+# Legacy sentinel kept only so external callers that import this name don't break.
+# Never use it as an actual default — it is a known-public string.
 DEFAULT_SECRET_KEY = "dev-insecure-secret-change-me-32b+"
+
+_TEST_ENVS = {"test", "testing"}
 
 
 @lru_cache
@@ -63,18 +72,60 @@ def get_settings() -> Settings:
     return Settings()
 
 
-def assert_secure_settings() -> None:
-    """Refuse to boot in production with the default JWT secret."""
+def _is_test_env() -> bool:
     s = get_settings()
-    env = (s.app_env or "").strip().lower()
-    prod_like = env in {"production", "prod", "cloud"} or (
-        not database_url().startswith("sqlite") and env not in {"development", "dev", "test", ""}
-    )
-    if prod_like and (s.secret_key or "").strip() in {"", DEFAULT_SECRET_KEY}:
+    return (s.app_env or "").strip().lower() in _TEST_ENVS
+
+
+def _is_prod_like() -> bool:
+    return (get_settings().app_env or "").strip().lower() in {"production", "prod", "cloud"}
+
+
+def assert_secure_settings() -> None:
+    """Fail fast if SECRET_KEY or FERNET_SECRET_KEY are missing / insecure.
+
+    In test environments (APP_ENV=test) missing keys are allowed so unit tests
+    can run without secrets.  All other environments — including development,
+    staging, and production — require both keys to be explicitly set.
+    """
+    if _is_test_env():
+        return
+    s = get_settings()
+    key = (s.secret_key or "").strip()
+    if not key or key == DEFAULT_SECRET_KEY:
         raise RuntimeError(
-            "SECRET_KEY must be set to a strong unique value when APP_ENV is production "
-            "or DATABASE_URL is Postgres. Generate one and set it in the environment."
+            "SECRET_KEY must be set to a strong, unique value in .env. "
+            "Generate one with: python -c \"import secrets; print(secrets.token_hex(32))\""
         )
+    fernet = (s.fernet_secret_key or "").strip()
+    if not fernet:
+        raise RuntimeError(
+            "FERNET_SECRET_KEY must be set to a strong, unique value in .env. "
+            "Generate one with: python -c \"from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())\""
+        )
+
+
+def warn_site_settings() -> None:
+    """Log non-fatal reminders for SEO/trust config in production."""
+    import logging
+
+    if _is_test_env():
+        return
+    s = get_settings()
+    logger = logging.getLogger("app.config")
+    if _is_prod_like():
+        if not (s.google_site_verification or "").strip():
+            logger.warning(
+                "GOOGLE_SITE_VERIFICATION is unset — Search Console HTML-tag verification "
+                "will not work until you set the content value from the meta tag."
+            )
+        else:
+            base = site_base_url()
+            logger.info(
+                "Google Search Console: verify property at %s, then submit sitemap %s/sitemap.xml",
+                base,
+                base,
+            )
 
 
 @lru_cache
@@ -118,6 +169,13 @@ def database_url() -> str:
 
 def uses_sqlite() -> bool:
     return database_url().startswith("sqlite")
+
+
+def site_base_url() -> str:
+    """Canonical public origin (no trailing slash)."""
+    s = get_settings()
+    base = (s.site_url or s.oauth_redirect_base or "").strip().rstrip("/")
+    return base or "http://127.0.0.1:8765"
 
 
 def api_key_status() -> dict[str, bool]:

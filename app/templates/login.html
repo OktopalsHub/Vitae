@@ -8,7 +8,7 @@
     <h1>Sign in</h1>
     <p class="meta">Email and password, Google, or GitHub — same email is the same account.</p>
     {% if error %}
-      <div class="error">{{ error }}</div>
+      <div class="error" role="alert">{{ error }}</div>
     {% endif %}
     <form method="post" action="/login" class="form-grid" style="margin-top:var(--s4)">
       <input type="hidden" name="next" value="{{ next or '/jobs' }}" />

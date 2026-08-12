@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}Privacy Policy · Vitae{% endblock %}
+{% block meta_description %}How Vitae collects, uses, and protects your personal data.{% endblock %}
+{% block shell_class %}shell--marketing{% endblock %}
+{% block content %}
+<div class="page-head">
+  <p class="eyebrow">Legal</p>
+  <h1>Privacy Policy</h1>
+  <p class="lede meta">Last updated: August 2026</p>
+</div>
+
+<article class="panel legal-prose">
+  <h2>1. What we collect</h2>
+  <ul>
+    <li><strong>Account:</strong> email, password hash, name, and authentication tokens (including OAuth identifiers).</li>
+    <li><strong>Profile &amp; CV:</strong> resume content, contact details, skills, and career facts you confirm during onboarding.</li>
+    <li><strong>Usage:</strong> job match scores, application drafts, subscription status, and basic technical logs (IP, browser) for security.</li>
+    <li><strong>Payment:</strong> billing is handled by Bachs; we store subscription IDs and plan status, not full card numbers.</li>
+  </ul>
+
+  <h2>2. How we use data</h2>
+  <p>To score jobs against your profile, generate application materials, operate your account, process subscriptions, prevent abuse, and improve the product.</p>
+
+  <h2>3. AI processing</h2>
+  <p>When you use AI features, relevant profile and job text may be sent to LLM providers (platform keys or your BYOK keys). Do not include sensitive data you do not want processed by those providers.</p>
+
+  <h2>4. Sharing</h2>
+  <p>We share data with service providers (hosting, payments, LLMs) as needed to run Vitae. We do not sell your personal data. We may disclose information if required by law.</p>
+
+  <h2>5. Retention</h2>
+  <p>We keep account and profile data while your account is active. You may request deletion by contacting support; some billing records may be retained for legal obligations.</p>
+
+  <h2>6. Security</h2>
+  <p>We use encryption for secrets at rest, HTTPS in production, and access controls. No system is 100% secure — use a strong unique password.</p>
+
+  <h2>7. Your rights</h2>
+  <p>Depending on your location, you may have rights to access, correct, export, or delete personal data. Contact us to exercise these rights.</p>
+
+  <h2 id="cookies">8. Cookies</h2>
+  <p>We use essential cookies for authentication and CSRF protection. We do not use third-party advertising cookies.</p>
+
+  <h2>9. Contact</h2>
+  <p>Privacy questions: use the support contact on your account billing correspondence.</p>
+</article>
+{% endblock %}

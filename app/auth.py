@@ -68,8 +68,8 @@ class UserUpdate(BaseModel):
 
 
 class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
-    reset_password_token_secret = get_settings().secret_key or "dev-insecure-secret-change-me-32b+"
-    verification_token_secret = get_settings().secret_key or "dev-insecure-secret-change-me-32b+"
+    reset_password_token_secret = get_settings().secret_key
+    verification_token_secret = get_settings().secret_key
 
     async def create(
         self,
@@ -175,7 +175,7 @@ cookie_transport = CookieTransport(
 
 def get_jwt_strategy() -> JWTStrategy:
     return JWTStrategy(
-        secret=get_settings().secret_key or "dev-insecure-secret-change-me-32b+",
+        secret=get_settings().secret_key,
         lifetime_seconds=SESSION_MAX_AGE,
     )
 

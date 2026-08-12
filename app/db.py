@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Generator
+from typing import Any
 
 from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.orm import Session, sessionmaker
@@ -133,8 +134,52 @@ def _backfill_listing_public_ids() -> None:
                 {"pid": token, "id": listing_id},
             )
 
+def _ensure_schema_meta_table(conn: Any) -> None:
+    """Create a lightweight one-time migration flag table if it doesn't exist."""
+    conn.execute(
+        text(
+            """
+            CREATE TABLE IF NOT EXISTS schema_meta (
+                key VARCHAR(128) PRIMARY KEY,
+                applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+            """
+        )
+    )
+
+
+def _migration_applied(conn: Any, key: str) -> bool:
+    try:
+        row = conn.execute(
+            text("SELECT 1 FROM schema_meta WHERE key = :k"), {"k": key}
+        ).fetchone()
+        return row is not None
+    except Exception:
+        return False
+
+
+def _record_migration(conn: Any, key: str) -> None:
+    try:
+        conn.execute(
+            text(
+                "INSERT INTO schema_meta (key) VALUES (:k) "
+                "ON CONFLICT (key) DO NOTHING"
+                if engine.dialect.name != "sqlite"
+                else "INSERT OR IGNORE INTO schema_meta (key) VALUES (:k)"
+            ),
+            {"k": key},
+        )
+    except Exception:
+        pass
+
+
 def _backfill_user_roles() -> None:
-    """Normalize roles to basic / admin / super_admin (role is source of truth)."""
+    """Normalize roles to basic / admin / super_admin (role is source of truth).
+
+    The mass SET is_superuser=false / SET is_verified=true statements are gated
+    behind a one-time migration flag so they only run on the first deployment and
+    never again — preventing accidental privilege-strip on every restart.
+    """
     insp = inspect(engine)
     if "users" not in insp.get_table_names():
         return
@@ -142,6 +187,8 @@ def _backfill_user_roles() -> None:
     if "role" not in cols:
         return
     with engine.begin() as conn:
+        _ensure_schema_meta_table(conn)
+        # Role normalisation is safe to run on every boot (idempotent).
         conn.execute(
             text(
                 """
@@ -161,8 +208,11 @@ def _backfill_user_roles() -> None:
                 """
             )
         )
-        conn.execute(text("UPDATE users SET is_superuser = false"))
-        conn.execute(text("UPDATE users SET is_verified = true"))
+        # Mass privilege-strip — runs ONCE only.
+        if not _migration_applied(conn, "privilege_strip_v1"):
+            conn.execute(text("UPDATE users SET is_superuser = false"))
+            conn.execute(text("UPDATE users SET is_verified = true"))
+            _record_migration(conn, "privilege_strip_v1")
 
 
 def _migrate_profiles_from_legacy() -> None:

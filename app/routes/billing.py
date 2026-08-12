@@ -206,7 +206,7 @@ async def bachs_webhook(request: Request, db: Session = Depends(get_db)):
         mode = str(data.get("mode") or "").lower()
         if isinstance(sub, dict) and sub.get("subscription_id"):
             billing.bachs_subscription_id = str(sub["subscription_id"])
-        if payment_status in {"paid", "no_payment_required"} or mode == "subscription":
+        if payment_status in {"paid", "no_payment_required"}:
             chosen = plan or (
                 billing.plan if billing.plan in PAID_PLANS else BillingPlan.PLATFORM_MONTHLY.value
             )
