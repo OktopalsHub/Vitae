@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="{% block html_class %}{% endblock %}">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -7,19 +7,21 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,500;0,9..144,650;1,9..144,500&family=Source+Sans+3:wght@400;550;650&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/static/styles.css" />
+  <link rel="stylesheet" href="/static/styles.css?v=20260812b" />
 </head>
-<body>
+<body class="{% block body_class %}{% endblock %}">
   <div id="working" class="working-banner" aria-live="polite">
     <div class="card">Working… please wait</div>
   </div>
 
+  <div class="toast-stack" id="toastStack" aria-live="polite"></div>
+
   <header class="site-header" id="siteHeader">
     <div class="site-header-inner">
       <a class="wordmark" href="/">V<em>itae</em></a>
-      <nav class="nav" aria-label="Primary">
+      <nav class="nav" id="siteNav" aria-label="Primary">
         {% if user %}
-          {% if profile_ready %}<a href="/">Jobs</a>{% endif %}
+          {% if profile_ready %}<a href="/jobs">Jobs</a>{% endif %}
           {% if nav_profiles %}
           <details class="nav-profile">
             <summary class="nav-profile-summary" title="Switch career track">
@@ -53,12 +55,17 @@
           <a class="btn btn-primary" href="/register">Get started</a>
         {% endif %}
       </nav>
+      <button class="nav-toggle" id="navToggle" type="button" aria-label="Menu" aria-expanded="false" aria-controls="siteNav">
+        <span class="bar"></span>
+        <span class="bar"></span>
+        <span class="bar"></span>
+      </button>
     </div>
   </header>
 
   <div class="shell {% block shell_class %}{% if user %}shell--app{% else %}shell--marketing{% endif %}{% endblock %}">
     {% if flash %}
-      <div class="flash">{{ flash }}</div>
+      <div class="flash" id="flashBanner">{{ flash }}</div>
     {% endif %}
 
     {% block content %}{% endblock %}
@@ -81,6 +88,10 @@
     (function () {
       const banner = document.getElementById("working");
       const header = document.getElementById("siteHeader");
+      const nav = document.getElementById("siteNav");
+      const navToggle = document.getElementById("navToggle");
+      const toastStack = document.getElementById("toastStack");
+
       function injectCsrf(form) {
         if (!form || (form.method || "get").toLowerCase() !== "post") return;
         let input = form.querySelector('input[name="csrf_token"]');
@@ -96,6 +107,7 @@
       document.addEventListener("submit", function (e) {
         if (e.target && e.target.tagName === "FORM") injectCsrf(e.target);
       }, true);
+
       function busy(on) {
         if (!banner) return;
         banner.classList.toggle("show", !!on);
@@ -106,21 +118,84 @@
       document.querySelectorAll("form[data-busy]").forEach((form) => {
         form.addEventListener("submit", () => busy(true));
       });
+
       if (header) {
         const onScroll = () => header.classList.toggle("is-scrolled", window.scrollY > 4);
         onScroll();
         window.addEventListener("scroll", onScroll, { passive: true });
       }
+
+      // ---- mobile nav ----
+      if (navToggle && nav) {
+        function closeNav() {
+          document.documentElement.classList.remove("nav-open");
+          navToggle.setAttribute("aria-expanded", "false");
+        }
+        navToggle.addEventListener("click", function () {
+          const open = document.documentElement.classList.toggle("nav-open");
+          navToggle.setAttribute("aria-expanded", open ? "true" : "false");
+        });
+        nav.addEventListener("click", function (e) {
+          if (e.target.closest("a, button, summary")) closeNav();
+        });
+        document.addEventListener("keydown", function (e) {
+          if (e.key === "Escape" && document.documentElement.classList.contains("nav-open")) closeNav();
+        });
+      }
+
+      // ---- toast ----
+      window.showToast = function (msg, kind) {
+        if (!toastStack) return;
+        const kinds = { success: "✓", error: "✕", info: "ℹ" };
+        const el = document.createElement("div");
+        el.className = "toast";
+        el.setAttribute("data-kind", kind || "info");
+        el.innerHTML = '<span class="toast__icon" aria-hidden="true">' + (kinds[kind] || "ℹ") + '</span><span class="toast__msg"></span>';
+        el.querySelector(".toast__msg").textContent = msg || "";
+        toastStack.appendChild(el);
+        setTimeout(function () {
+          el.classList.add("is-leaving");
+          setTimeout(function () { el.remove(); }, 350);
+        }, 3600);
+      };
+
+      // Convert flash banner into toast
+      const flashBanner = document.getElementById("flashBanner");
+      if (flashBanner) {
+        window.showToast(flashBanner.textContent.trim(), "info");
+        flashBanner.remove();
+      }
+
       window.copyField = async function (btn, text) {
         try {
           await navigator.clipboard.writeText(text || "");
           const old = btn.textContent;
           btn.textContent = "Copied";
-          setTimeout(() => { btn.textContent = old; }, 1200);
+          btn.classList.add("btn-ok");
+          window.showToast("Copied to clipboard", "success");
+          setTimeout(() => { btn.textContent = old; btn.classList.remove("btn-ok"); }, 1200);
         } catch (e) {
           alert("Copy failed. Select the text manually.");
         }
       };
+
+      // Reveal-on-scroll
+      if (!window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+        const reveals = document.querySelectorAll(".reveal");
+        if ("IntersectionObserver" in window) {
+          const io = new IntersectionObserver(function (entries) {
+            entries.forEach(function (entry) {
+              if (entry.isIntersecting) {
+                entry.target.classList.add("is-in");
+                io.unobserve(entry.target);
+              }
+            });
+          }, { threshold: 0.12 });
+          reveals.forEach((el) => io.observe(el));
+        } else {
+          reveals.forEach((el) => el.classList.add("is-in"));
+        }
+      }
     })();
   </script>
   {% block scripts %}{% endblock %}

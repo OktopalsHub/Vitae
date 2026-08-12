@@ -1,27 +1,22 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 from pathlib import Path
 from typing import Any
 
 from app.config import project_path
 from app.llm import LLMCreds, has_llm, llm_complete
-from app.profile.loader import load_or_build_profile
 
 # Duck-typed job objects (JobListing / JobCard) — needs .title/.company/.location/.description
 JobLike = Any
 
+logger = logging.getLogger(__name__)
+
 APPLY_PROFILE_PATH = project_path("data", "profile", "apply_profile.json")
 DRAFTS_DIR = project_path("data", "apply_drafts")
-
-# Truthful career facts for apply copy (kept in code so regenerations stay consistent).
-CAREER_FACTS = [
-    "Metaverse Magna: Game Studio backends powering 30+ games, ~2M sessions in under a year, 100k+ unique players daily.",
-    "Teamlyf: multi-tenant NestJS SaaS (messaging, LiveKit calls, Drive, payments, HR, projects).",
-    "Teamlyf AI: experimented with LangGraph to build a memory system for projects, related tasks, documents, and chats so tasks can be generated with context-aware descriptions.",
-    "Core skills: Node.js, TypeScript, NestJS, REST APIs, PostgreSQL/MySQL/MongoDB/Redis, Docker, CI/CD, cloud.",
-]
+_MIN_LLM_ANSWERS = 5
 
 
 def _draft_path(job_id: int, user_id: str | None = None) -> Path:
@@ -74,22 +69,51 @@ def _parse_contact(contact: str) -> dict[str, str]:
 
 
 def default_apply_profile() -> dict[str, Any]:
-    profile = load_or_build_profile()
-    parsed = _parse_contact(profile.get("contact") or "")
+    """Legacy shared-profile defaults for single-user smoke scripts only."""
     return {
-        "full_name": profile.get("name") or "Daniel Mbazu",
-        "email": parsed.get("email") or "",
-        "phone": parsed.get("phone") or "",
-        "linkedin": parsed.get("linkedin") or "",
-        "github": parsed.get("github") or "",
-        "location_preference": "Remote / Nigeria / Worldwide",
+        "full_name": "",
+        "email": "",
+        "phone": "",
+        "linkedin": "",
+        "github": "",
+        "location_preference": "",
         "website": "",
         "note": "",
-        "years_experience": "4+",
-        "work_authorization": "Eligible to work remotely from Nigeria",
+        "years_experience": "",
+        "work_authorization": "",
         "salary_expectation": "Open to discussion based on role and location",
         "earliest_start": "2–4 weeks",
+        "career_facts": [],
+        "experience_highlights": [],
+        "skills": [],
+        "summary": "",
     }
+
+
+def _candidate_name(apply_profile: dict[str, Any]) -> str:
+    return (apply_profile.get("full_name") or "").strip() or "I"
+
+
+def _career_facts(apply_profile: dict[str, Any]) -> list[str]:
+    facts = apply_profile.get("career_facts") or []
+    if isinstance(facts, list):
+        return [str(f).strip() for f in facts if str(f).strip()]
+    return []
+
+
+def _experience_highlights(apply_profile: dict[str, Any]) -> list[str]:
+    lines = apply_profile.get("experience_highlights") or []
+    if isinstance(lines, list):
+        return [str(x).strip() for x in lines if str(x).strip()]
+    return []
+
+
+def _skills_csv(apply_profile: dict[str, Any], limit: int = 12) -> str:
+    skills = apply_profile.get("skills") or []
+    if isinstance(skills, list):
+        parts = [str(s).strip() for s in skills if str(s).strip()]
+        return ", ".join(parts[:limit])
+    return ""
 
 
 def load_apply_profile() -> dict[str, Any]:
@@ -128,39 +152,67 @@ def save_apply_profile(data: dict[str, Any]) -> dict[str, Any]:
 
 
 def template_cover_blurb(job: JobLike, apply_profile: dict[str, Any]) -> str:
-    name = apply_profile.get("full_name") or "Daniel Mbazu"
+    name = _candidate_name(apply_profile)
     company = job.company or "your team"
-    title = job.title or "Backend Engineer"
+    title = job.title or "this role"
+    years = (apply_profile.get("years_experience") or "").strip()
+    years_bit = f" with {years} years of experience" if years else ""
+    themes = _jd_theme_hits(job, 4)
+    theme_bit = (
+        f" The role asks for {', '.join(themes)}. "
+        if themes
+        else " "
+    )
+    skills = _skills_csv(apply_profile, 6)
+    skills_bit = f"My background includes {skills}." if skills else ""
+    facts = _career_facts(apply_profile)[:1]
+    evidence = f" {facts[0]}" if facts else ""
+    if evidence and not evidence.endswith((".", "!", "?")):
+        evidence += "."
     return (
         f"Hello,\n\n"
-        f"I am {name}, a Backend Engineer with more than 4 years of experience in Node.js and TypeScript. "
-        f"I design, build, and maintain scalable REST APIs and production services. "
-        f"I am interested in the {title} role at {company}. "
-        f"I can own backend features from design to deployment and work clearly with product and frontend teams.\n\n"
+        f"I am {name}{years_bit}.{theme_bit}{skills_bit}{evidence} "
+        f"I want to bring that experience to the {title} role at {company}.\n\n"
         f"I attached my resume. I am happy to share more details.\n\n"
         f"Best regards,\n{name}"
     )
 
 
 def template_about_yourself(job: JobLike, apply_profile: dict[str, Any]) -> str:
-    name = apply_profile.get("full_name") or "Daniel Mbazu"
+    name = _candidate_name(apply_profile)
     company = job.company or "your team"
     title = job.title or "this role"
-    years = apply_profile.get("years_experience") or "4+"
-    # Structure: current role → background → why this role (no Present/Past/Future labels).
-    return (
-        f"I am {name}, a Backend Engineer currently at Metaverse Magna, where I build and "
-        f"operate Node.js/TypeScript platforms that power live games at scale. In less than a year, "
-        f"systems I contributed to helped ship 30+ games, drive about 2 million game sessions, and "
-        f"support over 100k unique players daily. "
-        f"Over {years} years I have designed multi-tenant SaaS backends, real-time and "
-        f"matchmaking systems, payment webhook flows, and production observability with Docker, "
-        f"CI/CD, and cloud infrastructure. That work taught me how to ship reliable APIs under load "
-        f"and partner clearly with product and frontend teams. "
-        f"I am excited about the {title} opportunity at {company} because it aligns with "
-        f"my strengths in scalable backend systems. I want to bring that ownership mindset here and "
-        f"help {company} deliver dependable product experiences."
+    years = (apply_profile.get("years_experience") or "").strip()
+    years_bit = f"Over {years} years, " if years else ""
+    facts = _career_facts(apply_profile)[:3]
+    highlights = _experience_highlights(apply_profile)[:4]
+    skills = _skills_csv(apply_profile, 8)
+    body_parts: list[str] = [f"I am {name}."]
+    if facts:
+        joined = " ".join(facts)
+        if not joined.endswith((".", "!", "?")):
+            joined += "."
+        body_parts.append(joined)
+    elif highlights:
+        body_parts.append("Recent experience includes: " + "; ".join(highlights) + ".")
+    elif apply_profile.get("summary"):
+        body_parts.append(str(apply_profile["summary"]).strip())
+    themes = _jd_theme_hits(job, 4)
+    theme_bit = (
+        f" This work maps to {', '.join(themes)} needed for this role."
+        if themes
+        else ""
     )
+    skills_bit = f" Core skills include {skills}." if skills else ""
+    experience_bit = (
+        f"{years_bit}I build production systems and work with product and engineering teams."
+        f"{skills_bit}{theme_bit}"
+    )
+    closing = (
+        f"I want the {title} role at {company} because it matches that experience. "
+        f"I can own delivery and help {company} ship reliable product work."
+    )
+    return " ".join(body_parts + [experience_bit, closing])
 
 
 def _strip_timeline_labels(text: str) -> str:
@@ -228,43 +280,79 @@ def _jd_theme_hits(job: JobLike, limit: int = 8) -> list[str]:
     return hits
 
 
-def _career_context_blob() -> str:
-    profile = load_or_build_profile()
-    exp = "\n".join((profile.get("experience_raw") or [])[:40])
-    skills = ", ".join((profile.get("skills") or [])[:30])
-    facts = "\n".join(f"- {f}" for f in CAREER_FACTS)
+def _career_context_blob(apply_profile: dict[str, Any]) -> str:
+    """Build LLM context from the caller's per-user profile — never shared legacy CV data."""
+    facts = _career_facts(apply_profile)
+    highlights = _experience_highlights(apply_profile)
+    skills = _skills_csv(apply_profile, 30)
+    facts_block = "\n".join(f"- {f}" for f in facts) if facts else "(none provided)"
+    exp_block = "\n".join(highlights[:40]) if highlights else "(none provided)"
+    summary = (apply_profile.get("summary") or "").strip()
     return (
-        f"Career facts:\n{facts}\n"
-        f"Skills: {skills}\n"
-        f"Experience lines (from CV):\n{exp[:3500]}"
+        f"Career facts:\n{facts_block}\n"
+        f"Summary: {summary or '(none)'}\n"
+        f"Skills: {skills or '(none)'}\n"
+        f"Experience lines (from CV):\n{exp_block[:3500]}"
     )
 
 
 def template_relevant_experience(job: JobLike, apply_profile: dict[str, Any]) -> str:
     company = job.company or "this company"
-    title = job.title or "Backend Engineer"
-    years = apply_profile.get("years_experience") or "4+"
+    title = job.title or "this role"
+    years = (apply_profile.get("years_experience") or "").strip()
+    years_bit = f"{years} years of " if years else ""
     themes = _jd_theme_hits(job)
     theme_clause = (
         f"This {title} role at {company} calls for {', '.join(themes[:5])}. "
         if themes
         else f"For the {title} role at {company}, "
     )
+    facts = _career_facts(apply_profile)[:2]
+    highlights = _experience_highlights(apply_profile)[:3]
+    if facts:
+        evidence = " ".join(facts)
+    elif highlights:
+        evidence = "Relevant experience includes: " + "; ".join(highlights) + "."
+    else:
+        skills = _skills_csv(apply_profile, 8)
+        evidence = (
+            f"I bring {years_bit}hands-on experience delivering production systems"
+            + (f" with {skills}" if skills else "")
+            + "."
+        )
     return (
-        f"{theme_clause}"
-        f"I bring {years} years building multi-tenant backends, payment integrations, real-time systems, "
-        f"and monitored production services in Node.js/TypeScript. At Metaverse Magna I helped platforms "
-        f"support 100k+ unique players daily and about 2M game sessions. At Teamlyf I delivered NestJS SaaS "
-        f"foundations and started LangGraph-based memory for projects, documents, and chats so generated "
-        f"tasks stay in project context. I design REST APIs, harden auth (JWT/RBAC), and deploy with Docker "
-        f"and CI/CD. That maps directly to what this role needs."
+        f"{theme_clause}{evidence} "
+        f"That maps directly to what this role needs."
     )
 
 
 def template_application_answers(job: JobLike, apply_profile: dict[str, Any]) -> list[dict[str, str]]:
     company = job.company or "this company"
-    title = job.title or "Backend Engineer"
-    years = apply_profile.get("years_experience") or "4+"
+    title = job.title or "this role"
+    years = (apply_profile.get("years_experience") or "").strip() or "several"
+    facts = _career_facts(apply_profile)
+    highlights = _experience_highlights(apply_profile)
+    themes = _jd_theme_hits(job, 3)
+    if facts:
+        achievement = facts[0]
+    elif highlights:
+        achievement = highlights[0]
+    else:
+        achievement = (
+            "I have delivered production features end-to-end, collaborating with "
+            "product and engineering to ship reliable user-facing systems."
+        )
+    if themes:
+        why = (
+            f"I want the {title} role at {company} because the JD focuses on "
+            f"{', '.join(themes)}. That matches work I already do. "
+            f"I can contribute quickly and own features from design to production."
+        )
+    else:
+        why = (
+            f"I want the {title} role at {company} because it matches work I already do. "
+            f"I can contribute quickly and own features from design to production."
+        )
     return [
         {
             "question": "Tell us about yourself",
@@ -272,11 +360,7 @@ def template_application_answers(job: JobLike, apply_profile: dict[str, Any]) ->
         },
         {
             "question": "Why do you want this role / Why this company?",
-            "answer": (
-                f"I want the {title} role at {company} because it matches my backend focus: "
-                f"scalable APIs, Node.js/TypeScript systems, and high-quality delivery. "
-                f"I can contribute quickly and own features from design to production."
-            ),
+            "answer": why,
         },
         {
             "question": "Relevant experience / What makes you a fit?",
@@ -284,21 +368,17 @@ def template_application_answers(job: JobLike, apply_profile: dict[str, Any]) ->
         },
         {
             "question": "Years of experience",
-            "answer": f"{years} years of professional backend development experience.",
+            "answer": f"{years} years of professional experience.",
         },
         {
             "question": "Biggest achievement",
-            "answer": (
-                "At Metaverse Magna I helped build Game Studio backend systems used to deploy 30+ games, "
-                "serve about 2 million game sessions in less than a year, and support over 100k unique "
-                "players daily. Earlier I also delivered multi-tenant SaaS backends and secure payment "
-                "webhook flows from zero to production."
-            ),
+            "answer": achievement,
         },
         {
             "question": "Work authorization / Location",
             "answer": apply_profile.get("work_authorization")
-            or "Eligible to work remotely from Nigeria.",
+            or apply_profile.get("location_preference")
+            or "Available for remote work.",
         },
         {
             "question": "Salary expectation",
@@ -319,19 +399,52 @@ def template_application_answers(job: JobLike, apply_profile: dict[str, Any]) ->
     ]
 
 
-async def _llm_text(prompt: str, fallback: str, max_tokens: int = 1200, creds: LLMCreds | None = None) -> str:
+APPLY_WRITING_SYSTEM = """You write job-application copy in ASD-STE100 Simplified Technical English.
+
+ASD-STE100 voice (required):
+- Short, active sentences. Prefer one idea per sentence.
+- Use approved-style clear verbs: build, design, lead, deliver, fix, reduce, increase, own.
+- Prefer concrete nouns (system, API, latency, users, revenue, team) over soft adjectives.
+- Avoid nested clauses and filler transitions.
+
+Hard bans (never write these unless they appear verbatim in the candidate profile):
+- world-class, world class, best-in-class, cutting-edge, passionate, results-driven,
+  synergistic, leverage (as fluff), leverage my skills, proven track record,
+  seamless, robust solutions, dynamic individual, go-getter, thrives in,
+  excited to leverage, highly motivated, detail-oriented team player.
+
+Targeting rules (required — generic copy fails):
+- Every long answer must map 2–4 concrete needs from THIS job description to real profile facts.
+- Name technologies, products, domains, or outcomes from the JD when the profile supports them.
+- If the profile lacks evidence for a JD need, skip that need — do not invent or stretch.
+- Never invent employers, titles, metrics, or skills.
+- Do not say "tailored resume" or "customized resume"; say "my resume" if needed.
+"""
+
+
+async def _llm_text(
+    prompt: str,
+    fallback: str,
+    max_tokens: int = 1200,
+    creds: LLMCreds | None = None,
+    *,
+    system: str = "",
+    temperature: float = 0.4,
+) -> str:
     if not has_llm(creds):
         return fallback
     try:
         text = await llm_complete(
             prompt=prompt,
+            system=system or APPLY_WRITING_SYSTEM,
             json_mode=False,
             max_tokens=max_tokens,
-            temperature=0.4,
+            temperature=temperature,
             creds=creds,
         )
         return (text or "").strip() or fallback
-    except Exception:
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("LLM text generation failed; using fallback: %s", exc)
         return fallback
 
 
@@ -347,21 +460,29 @@ async def generate_cover_blurb(
     rewrite_bit = ""
     if rewrite and previous.strip():
         rewrite_bit = (
-            "Rewrite this cover note from scratch with a fresh angle. Keep facts truthful. "
-            "Do not copy the old wording. Improve clarity and company fit.\n"
+            "Rewrite from scratch in ASD-STE100 with a sharper JD-specific angle. "
+            "Keep facts truthful. Do not reuse stock phrases from the previous note.\n"
             f"Previous cover note:\n{previous[:2000]}\n"
         )
+    themes = ", ".join(_jd_theme_hits(job, 8)) or "(infer from the full description)"
     prompt = (
-        "Write a short application cover note (ASD-STE100: short active sentences, max 120 words). "
-        "No fluff. Truthful. Do not invent employers. "
-        "If you mention the resume, say 'my resume' — never 'tailored resume' or 'customized resume'.\n"
+        "Write a short cover note for THIS role only (90–130 words). Use ASD-STE100.\n"
+        "Structure:\n"
+        "1) Who you are + exact role + company.\n"
+        "2) Map 2–3 JD requirements to real profile experience "
+        "(name stack/outcomes the JD asks for — only if supported).\n"
+        "3) Why THIS company/product using domain language from the JD (not vague interest).\n"
+        "4) Closing: resume attached + open to talk.\n"
+        "No hype adjectives. No generic blurb that could fit any company.\n"
         f"{rewrite_bit}"
-        f"Candidate: {json.dumps(apply_profile)}\n"
-        f"Job title: {job.title}\nCompany: {job.company}\n"
-        f"Job snippet: {(job.description or '')[:1500]}\n"
-        "Return plain text only."
+        f"JD themes to hit if supported by the profile: {themes}\n"
+        f"Candidate:\n{json.dumps({k: v for k, v in apply_profile.items() if k != 'experience_highlights'}, indent=2)[:3500]}\n"
+        f"{_career_context_blob(apply_profile)}\n"
+        f"Job title: {job.title}\nCompany: {job.company}\nLocation: {job.location}\n"
+        f"FULL job description:\n{_job_description(job, 4500)}\n"
+        "Return plain text only. No bullet list. No subject line."
     )
-    return await _llm_text(prompt, fallback, max_tokens=400, creds=creds)
+    return await _llm_text(prompt, fallback, max_tokens=500, creds=creds)
 
 
 async def generate_application_answers(
@@ -376,42 +497,41 @@ async def generate_application_answers(
         return fallback
 
     rewrite_bit = (
-        "Produce a fresh rewrite of the answers. Vary wording from a generic template, "
-        "but keep the same question themes and truthful facts.\n"
+        "Produce a fresh rewrite in ASD-STE100. Same question themes. "
+        "Stronger JD targeting. No stock phrases.\n"
         if rewrite
         else ""
     )
+    themes = ", ".join(_jd_theme_hits(job, 10)) or "(read the full JD carefully)"
     prompt = (
-        "Create short truthful answers for common job application form questions. "
-        "Use ASD-STE100: short active sentences. Do not invent employers or skills. "
+        "Create truthful ASD-STE100 answers for common application form questions for THIS job only.\n"
         "Return ONLY JSON: {\"answers\":[{\"question\":\"...\",\"answer\":\"...\"}]}\n"
         f"{rewrite_bit}"
         "Include these themes: about yourself, why this role/company, relevant experience, "
         "years of experience, biggest achievement, work authorization/location, "
-        "salary expectation, earliest start / availability.\n"
-        "For 'Tell us about yourself' / about yourself, follow this order of ideas "
-        "(structure only — never write the words Present, Past, or Future as labels):\n"
-        "1) Current focus at Metaverse Magna and scale impact "
-        "(30+ games deployed, ~2M game sessions in under a year, 100k+ unique players daily).\n"
-        "2) Brief skills shaped by prior backend/SaaS/real-time work "
-        "(include Teamlyf LangGraph memory experiment when AI/context tooling is relevant).\n"
-        "3) Connect goals to THIS company and role. Keep it concise, positive, relevant.\n"
-        "Write it as natural flowing prose a person would say aloud.\n"
-        "For 'Relevant experience / What makes you a fit?':\n"
-        "- Read the FULL job description below.\n"
-        "- Name 2–4 concrete requirements from the JD.\n"
-        "- Map each to specific truthful experience (employer + outcome).\n"
-        "- Do not answer with a generic backend blurb that could fit any company.\n"
-        "Use these facts when relevant; do not invent bigger numbers.\n"
-        f"Candidate profile: {json.dumps(apply_profile)}\n"
-        f"{_career_context_blob()}\n"
+        "salary expectation, earliest start / availability.\n\n"
+        f"JD requirements/themes to prioritize (only if supported by profile): {themes}\n\n"
+        "About yourself (100–160 words, ASD-STE100):\n"
+        "- Lead with work most relevant to this JD — not a generic career bio.\n"
+        "- Map 2 concrete profile facts to JD needs.\n"
+        "- Close with why this role/company using JD product/domain language.\n"
+        "- Never write Present/Past/Future labels.\n\n"
+        "Why this role / company (70–110 words):\n"
+        "- Name something specific from the JD (product, customers, stack, stage, problem).\n"
+        "- Tie it to one real experience. No passion filler.\n\n"
+        "Relevant experience / fit (100–160 words):\n"
+        "- Pull 3 concrete JD requirements.\n"
+        "- For each: employer/context from the profile + outcome (when known).\n"
+        "- If you cannot map a requirement honestly, omit it.\n"
+        "- Do not write a blurb that could fit any company.\n\n"
+        "Biggest achievement: pick the achievement that best proves fitness for THIS role.\n"
+        "Short answers (years, auth, salary, start) stay factual from the profile.\n\n"
+        f"Candidate profile:\n{json.dumps({k: v for k, v in apply_profile.items() if k != 'experience_highlights'}, indent=2)[:3500]}\n"
+        f"{_career_context_blob(apply_profile)}\n"
         f"Job title: {job.title}\nCompany: {job.company}\nLocation: {job.location}\n"
-        f"FULL job description:\n{_job_description(job, 4500)}\n"
-        "Also provide a strong fallback-quality about-yourself answer if rewriting.\n"
-        f"Fallback about-yourself draft:\n{template_about_yourself(job, apply_profile)}\n"
-        f"Fallback fit draft:\n{template_relevant_experience(job, apply_profile)}\n"
+        f"FULL job description:\n{_job_description(job, 5000)}\n"
     )
-    raw = await _llm_text(prompt, "", max_tokens=1600, creds=creds)
+    raw = await _llm_text(prompt, "", max_tokens=2200, creds=creds, temperature=0.35)
     if not raw:
         return fallback
     try:
@@ -432,8 +552,16 @@ async def generate_application_answers(
                     if "about yourself" in q.lower():
                         a = _strip_timeline_labels(a)
                     cleaned.append({"question": q, "answer": a})
-        return cleaned or fallback
-    except Exception:
+        if len(cleaned) < _MIN_LLM_ANSWERS:
+            logger.warning(
+                "LLM returned only %s application answers (need %s); using template fallback",
+                len(cleaned),
+                _MIN_LLM_ANSWERS,
+            )
+            return fallback
+        return cleaned
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Failed to parse LLM application answers; using fallback: %s", exc)
         return fallback
 
 
@@ -453,34 +581,41 @@ async def rewrite_single_answer(
     fallback = previous_answer or fallbacks.get(question.lower()) or template_about_yourself(
         job, apply_profile
     )
-    about_rules = ""
+    themes = ", ".join(_jd_theme_hits(job, 8))
     ql = question.lower()
+    focus = (
+        "Rewrite in ASD-STE100. Every claim must be checkable against the profile "
+        "and useful for THIS JD. Drop empty adjectives and hype.\n"
+    )
     if "about yourself" in ql:
-        about_rules = (
-            "Structure the answer as current work → prior experience → interest in this role. "
-            "Do NOT write labels like Present:, Past:, or Future: — speak as natural prose. "
-            "Include Metaverse Magna impact (30+ games, ~2M sessions, 100k+ unique players daily), "
-            "backend/SaaS skills, and a clear link to this company/role.\n"
+        focus = (
+            "ASD-STE100. Lead with experience most relevant to this JD. "
+            "Map two profile facts to JD needs. Close with company/role fit. "
+            "No Present/Past/Future labels.\n"
+        )
+    elif any(k in ql for k in ("why this", "why do you want", "why our", "company")):
+        focus = (
+            "ASD-STE100. Name something specific from the JD "
+            "(product, users, stack, or problem). Tie it to one real experience. "
+            "No passion filler.\n"
         )
     elif any(k in ql for k in ("relevant experience", "makes you a fit", "why are you a fit", "why you")):
-        about_rules = (
-            "Ground the answer in the FULL job description. Pull 2–4 concrete JD requirements "
-            "and map each to truthful experience (employer + outcome). Mention Teamlyf LangGraph "
-            "memory work when the JD mentions AI/agents/LLM/context/tools. "
-            "No generic blurb that could apply to any company.\n"
+        focus = (
+            "ASD-STE100. Pull 2–4 concrete JD requirements and map each to profile "
+            "experience (employer + outcome when known). Omit what you cannot support.\n"
         )
     prompt = (
-        "Rewrite this job-application form answer. Truthful only. Short active sentences. "
-        "Do not invent employers or skills. Return plain text answer only (no JSON, no labels).\n"
-        f"{about_rules}"
+        f"{focus}"
         f"Question: {question}\n"
-        f"Previous answer:\n{previous_answer[:2500]}\n"
-        f"Candidate profile: {json.dumps(apply_profile)}\n"
-        f"{_career_context_blob()}\n"
+        f"JD themes: {themes or 'see full description'}\n"
+        f"Previous answer (improve targeting; do not lightly paraphrase fluff):\n{previous_answer[:2500]}\n"
+        f"Candidate profile:\n{json.dumps({k: v for k, v in apply_profile.items() if k != 'experience_highlights'}, indent=2)[:3000]}\n"
+        f"{_career_context_blob(apply_profile)}\n"
         f"Job title: {job.title}\nCompany: {job.company}\n"
-        f"FULL job description:\n{_job_description(job, 4500)}\n"
+        f"FULL job description:\n{_job_description(job, 5000)}\n"
+        "Return plain text only."
     )
-    text = await _llm_text(prompt, fallback, max_tokens=700, creds=creds)
+    text = await _llm_text(prompt, fallback, max_tokens=800, creds=creds)
     if "about yourself" in ql:
         return _strip_timeline_labels(text)
     return text
@@ -493,10 +628,13 @@ async def ensure_apply_copy(
     force_cover: bool = False,
     force_answers: bool = False,
     creds: LLMCreds | None = None,
-    user_id: str | None = None,
+    existing: dict[str, Any] | None = None,
+    user_id: str | None = None,  # retained for call-site compatibility; unused
 ) -> dict[str, Any]:
+    """Generate cover/answers. Persistence is owned by the caller (DB)."""
+    del user_id  # unused — drafts are no longer file-backed here
     apply_profile = apply_profile or load_apply_profile()
-    draft = load_job_draft(job.id, user_id=user_id)
+    draft = existing if isinstance(existing, dict) else {}
     cover = str(draft.get("cover_blurb") or "").strip()
     answers = draft.get("answers") if isinstance(draft.get("answers"), list) else []
 
@@ -516,16 +654,6 @@ async def ensure_apply_copy(
             creds=creds,
         )
 
-    save_job_draft(
-        job.id,
-        {
-            "cover_blurb": cover,
-            "answers": answers,
-            "job_title": job.title,
-            "company": job.company,
-        },
-        user_id=user_id,
-    )
     return {"cover_blurb": cover, "answers": answers}
 
 
@@ -534,10 +662,15 @@ async def rewrite_answer_in_draft(
     question: str,
     apply_profile: dict[str, Any] | None = None,
     creds: LLMCreds | None = None,
-    user_id: str | None = None,
+    existing: dict[str, Any] | None = None,
+    user_id: str | None = None,  # retained for call-site compatibility; unused
 ) -> dict[str, Any]:
+    """Rewrite one answer. Persistence is owned by the caller (DB)."""
+    del user_id
     apply_profile = apply_profile or load_apply_profile()
-    copy = await ensure_apply_copy(job, apply_profile, creds=creds, user_id=user_id)
+    copy = await ensure_apply_copy(
+        job, apply_profile, creds=creds, existing=existing
+    )
     answers = list(copy["answers"])
     question = (question or "").strip()
     previous = ""
@@ -554,11 +687,6 @@ async def rewrite_answer_in_draft(
         answers[idx] = {"question": answers[idx]["question"], "answer": rewritten}
     else:
         answers.append({"question": question, "answer": rewritten})
-    save_job_draft(
-        job.id,
-        {"cover_blurb": copy["cover_blurb"], "answers": answers},
-        user_id=user_id,
-    )
     return {"cover_blurb": copy["cover_blurb"], "answers": answers}
 
 def apply_assist_payload(job: JobLike, apply_profile: dict[str, Any] | None = None) -> dict[str, Any]:

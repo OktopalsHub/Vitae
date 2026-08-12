@@ -3,12 +3,12 @@
 {% block content %}
 <div class="page-head detail-hero" style="max-width:none">
   <div class="actions" style="justify-content:space-between; margin-bottom:var(--s4)">
-    <a class="btn" href="/">← Back to jobs</a>
+    <a class="btn" href="/jobs">← Back to jobs</a>
     <div class="actions">
       {% if apply_url %}
       <a class="btn" href="{{ apply_url }}" target="_blank" rel="noopener">Open apply page</a>
       {% endif %}
-      <form action="/jobs/{{ job.id }}/generate" method="post" data-busy>
+      <form action="/jobs/{{ job.public_id }}/generate" method="post" data-busy>
         <button class="btn btn-primary" type="submit">Generate tailored CV</button>
       </form>
     </div>
@@ -23,16 +23,16 @@
   </p>
 
   <div class="actions">
-    <form action="/jobs/{{ job.id }}/status" method="post">
+    <form action="/jobs/{{ job.public_id }}/status" method="post">
       <input type="hidden" name="status" value="applied" />
       <button class="btn btn-ok" type="submit">Mark applied</button>
     </form>
-    <form action="/jobs/{{ job.id }}/status" method="post">
+    <form action="/jobs/{{ job.public_id }}/status" method="post">
       <input type="hidden" name="status" value="skipped" />
       <button class="btn btn-danger" type="submit">Skip</button>
     </form>
     <form
-      action="/jobs/{{ job.id }}/status"
+      action="/jobs/{{ job.public_id }}/status"
       method="post"
       onsubmit="return confirm('Move this job back to New?\n\nThis only changes status (for example from applied/skipped). It does not delete your tailored CV or Apply Assist drafts.');"
     >
@@ -51,7 +51,14 @@
 
     <div class="panel">
       <h3 class="rule-title" style="margin-top:0">Match ranking</h3>
-      <p class="score" style="font-size:1.6rem; margin:0 0 var(--s2)">{{ '%.0f'|format(job.match_score) }}% <span class="meta" style="font-family:var(--font-body);font-size:0.8rem">rank</span></p>
+      {% set score = job.match_score|round|int %}
+      <div style="display:flex; align-items:center; gap:var(--s4); margin:0 0 var(--s2)">
+        <span class="ring {% if score >= 75 %}is-high{% elif score >= 50 %}is-mid{% else %}is-low{% endif %}" data-ring="{{ score }}" style="--ring-size:4.5rem"><span class="ring__label" style="font-size:1.15rem">{{ score }}</span></span>
+        <div>
+          <p class="score" style="font-size:1.2rem; margin:0">Match score</p>
+          <p class="meta" style="margin:0">How well this role fits your {{ active_profile.label if active_profile else "profile" }}</p>
+        </div>
+      </div>
       {% if breakdown and breakdown.score != job.match_score %}
       <p class="meta">Live recompute: {{ '%.0f'|format(breakdown.score) }}% — open Rescore to refresh this ranking cache.</p>
       {% endif %}
@@ -138,7 +145,7 @@
       {% endfor %}
     </div>
 
-    <form action="/jobs/{{ job.id }}/save-copy" method="post" id="cover-form">
+    <form action="/jobs/{{ job.public_id }}/save-copy" method="post" id="cover-form">
       <label>Cover note
         <textarea id="cover-blurb" name="cover_blurb" class="cover-box">{{ cover_blurb }}</textarea>
       </label>
@@ -148,13 +155,13 @@
         <a class="btn" href="/settings">Edit apply profile</a>
       </div>
     </form>
-    <form action="/jobs/{{ job.id }}/rewrite/cover" method="post" data-busy style="margin-top:var(--s2)">
+    <form action="/jobs/{{ job.public_id }}/rewrite/cover" method="post" data-busy style="margin-top:var(--s2)">
       <button class="btn btn-primary" type="submit" {% if not keys.llm %}disabled title="Add an LLM API key in .env"{% endif %}>Rewrite cover with AI</button>
     </form>
 
     <h4 class="rule-title">Application answers</h4>
     <p class="apply-note">Suggested answers for common form questions. Use Rewrite when you want a fresh AI draft.</p>
-    <form action="/jobs/{{ job.id }}/rewrite/answers" method="post" data-busy style="margin:var(--s2) 0 var(--s3)">
+    <form action="/jobs/{{ job.public_id }}/rewrite/answers" method="post" data-busy style="margin:var(--s2) 0 var(--s3)">
       <button class="btn btn-primary" type="submit" {% if not keys.llm %}disabled title="Add an LLM API key in .env"{% endif %}>Rewrite all answers with AI</button>
     </form>
     <div class="chip-list" style="margin:var(--s3) 0 var(--s4)">
@@ -166,7 +173,7 @@
         </div>
         <div class="actions">
           <button class="btn" type="button" onclick='copyField(this, {{ item.answer|tojson }})'>Copy answer</button>
-          <form action="/jobs/{{ job.id }}/rewrite/answer" method="post" data-busy>
+          <form action="/jobs/{{ job.public_id }}/rewrite/answer" method="post" data-busy>
             <input type="hidden" name="question" value="{{ item.question }}" />
             <button class="btn" type="submit" {% if not keys.llm %}disabled{% endif %}>Rewrite with AI</button>
           </form>
@@ -179,7 +186,7 @@
     {% if files %}
       <ul style="margin:0 0 var(--s2); padding-left:var(--s5); line-height:1.8">
         {% for f in files %}
-          <li><a href="/jobs/{{ job.id }}/download/{{ f|path_quote }}">{{ f }}</a></li>
+          <li><a href="/jobs/{{ job.public_id }}/download/{{ f|path_quote }}">{{ f }}</a></li>
         {% endfor %}
       </ul>
       <p class="meta">Files ready to download below.</p>
@@ -187,7 +194,7 @@
       <p class="meta">Generate a tailored CV first, then download the PDF to upload on the apply form.</p>
     {% endif %}
 
-    <form action="/jobs/{{ job.id }}/status" method="post" style="margin-top:var(--s3)">
+    <form action="/jobs/{{ job.public_id }}/status" method="post" style="margin-top:var(--s3)">
       <input type="hidden" name="status" value="applied" />
       <button class="btn btn-ok" type="submit">I submitted — mark applied</button>
     </form>
@@ -207,4 +214,26 @@
     {% endif %}
   </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  var ring = document.querySelector("[data-ring]");
+  if (!ring) return;
+  var target = parseInt(ring.getAttribute("data-ring"), 10) || 0;
+  if (window.matchMedia("(prefers-reduced-motion: reduce)").matches || !("CSS" in window) || !CSS.supports("--foo: 0")) {
+    ring.style.setProperty("--ring-value", target);
+    return;
+  }
+  var start = null;
+  var ease = function (p) { return 1 - Math.pow(1 - p, 3); };
+  requestAnimationFrame(function step(t) {
+    if (!start) start = t;
+    var p = Math.min((t - start) / 900, 1);
+    ring.style.setProperty("--ring-value", Math.round(target * ease(p)));
+    if (p < 1) requestAnimationFrame(step);
+  });
+})();
+</script>
 {% endblock %}

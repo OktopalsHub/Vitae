@@ -65,6 +65,7 @@ def admin_home(
             role_counts[key] = int(row[1])
 
     return templates.TemplateResponse(
+        request,
         "admin/home.html",
         template_ctx(
             request,
@@ -101,6 +102,7 @@ def admin_users(
         for u in rows
     ]
     return templates.TemplateResponse(
+        request,
         "admin/users.html",
         template_ctx(
             request,

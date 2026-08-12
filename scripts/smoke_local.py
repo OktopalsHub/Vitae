@@ -31,7 +31,10 @@ def main() -> None:
     with TestClient(app) as client:
         r = client.get("/")
         _ok("GET /", r.status_code == 200, f"status={r.status_code}")
-        _ok("GET / has jobs UI", "Match" in r.text or "jobs" in r.text.lower(), f"len={len(r.text)}")
+        _ok("GET / is landing", "landing-hero" in r.text or "scored against your CV" in r.text)
+
+        r = client.get("/jobs")
+        _ok("GET /jobs", r.status_code in (200, 302, 303), f"status={r.status_code}")
 
         r = client.get("/paste")
         _ok("GET /paste", r.status_code == 200, f"status={r.status_code}")

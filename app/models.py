@@ -77,6 +77,8 @@ class JobListing(Base):
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    # Unguessable URL token (not sequential). Used in /jobs/{public_id} routes.
+    public_id: Mapped[str] = mapped_column(String(32), unique=True, index=True, default="")
     source: Mapped[str] = mapped_column(String(64), index=True)
     external_id: Mapped[str] = mapped_column(String(255))
     title: Mapped[str] = mapped_column(String(512))
@@ -132,6 +134,8 @@ class Profile(Base):
     master_cv_path: Mapped[str] = mapped_column(String(1024), default="")
     profile_json: Mapped[str] = mapped_column(Text, default="{}")
     career_facts_json: Mapped[str] = mapped_column(Text, default="[]")
+    # One-time free listing opens for this profile (JSON list of listing ids). Not monthly.
+    free_unlocked_json: Mapped[str] = mapped_column(Text, default="[]")
     profile_confirmed: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     archived_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
@@ -203,6 +207,27 @@ class ApplyDraft(Base):
     )
 
 
+class ListingMatchScore(Base):
+    """Persisted browse-rank score for a profile×listing (not a UserJob overlay)."""
+
+    __tablename__ = "listing_match_scores"
+    __table_args__ = (
+        UniqueConstraint("profile_id", "listing_id", name="uq_profile_listing_score"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    profile_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("profiles.id", ondelete="cascade"), index=True
+    )
+    listing_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("job_listings.id", ondelete="cascade"), index=True
+    )
+    match_score: Mapped[float] = mapped_column(Float, default=0.0, index=True)
+    match_reasons: Mapped[str] = mapped_column(Text, default="")
+    fingerprint: Mapped[str] = mapped_column(String(64), default="", index=True)
+    scored_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+
 class ProfileBilling(Base):
     """One subscription (+ BYOK keys) per career profile."""
 
@@ -247,6 +272,10 @@ class JobCard:
         return self.listing.id
 
     @property
+    def public_id(self) -> str:
+        return self.listing.public_id or ""
+
+    @property
     def source(self) -> str:
         return self.listing.source
 
@@ -284,8 +313,10 @@ _PLATFORM_COMPANY_PLACEHOLDERS = frozenset(
     {
         "djinni listing",
         "wellfound listing",
+        "wellfound startup",
         "ziprecruiter",
         "remoteok",
+        "remote ok",
         "remotive",
         "adzuna",
         "arbeitnow",
@@ -295,10 +326,22 @@ _PLATFORM_COMPANY_PLACEHOLDERS = frozenset(
         "lever",
         "djinni",
         "wellfound",
+        "weworkremotely",
+        "we work remotely",
         "yc",
+        "ycombinator",
+        "y combinator",
         "paste",
+        "unknown",
+        "unknown company",
+        "n/a",
+        "na",
+        "tba",
+        "company tba",
     }
 )
+
+_PLATFORM_SUFFIXES = (" listing", " startup", " jobs", " careers", " board")
 
 
 def public_company_name(company: str | None, source: str | None = None) -> str:
@@ -306,11 +349,22 @@ def public_company_name(company: str | None, source: str | None = None) -> str:
     raw = (company or "").strip()
     if not raw:
         return ""
-    key = raw.lower()
+    key = " ".join(raw.lower().split())
     if key in _PLATFORM_COMPANY_PLACEHOLDERS:
         return ""
-    if source and key == source.strip().lower():
+    for suffix in _PLATFORM_SUFFIXES:
+        if key.endswith(suffix):
+            stem = key[: -len(suffix)].strip()
+            if stem in _PLATFORM_COMPANY_PLACEHOLDERS:
+                return ""
+    src = (source or "").strip().lower()
+    src_base = src.split(":", 1)[0] if src else ""
+    if src and key == src:
         return ""
-    if key.endswith(" listing") and key.removesuffix(" listing") in _PLATFORM_COMPANY_PLACEHOLDERS:
+    if src_base and key == src_base:
+        return ""
+    if src_base and src_base in _PLATFORM_COMPANY_PLACEHOLDERS and key.replace("-", "") == src_base.replace(
+        "-", ""
+    ):
         return ""
     return raw

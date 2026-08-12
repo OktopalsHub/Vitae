@@ -9,14 +9,15 @@ from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
-from app.apply_assist import apply_assist_payload, rewrite_answer_in_draft, save_job_draft
+from app.apply_assist import apply_assist_payload, rewrite_answer_in_draft
 from app.config import project_path
 from app.db import get_db
 from app.matching.scorer import reasons_from_json, score_job_detail
 from app.models import JobStatus, User
 from app.services import (
     add_pasted_job_for_user,
-    get_user_job_card,
+    get_user_job_card_by_public_id,
+    job_path,
     list_job_cards,
     rescore_user_jobs,
     sync_public_jobs,
@@ -27,19 +28,20 @@ from app.accounts import (
     can_open_listing,
     can_use_ai,
     detect_billing_region_detail,
-    ensure_account,
+    free_opens_remaining,
+    free_unlocked_listing_ids,
     get_active_profile,
     has_full_job_access,
-    is_profile_confirmed,
+    listing_is_free_openable,
     llm_creds_for_user,
+    load_apply_draft_db,
     load_user_profile_dict,
     load_user_settings,
     save_apply_draft_db,
     FREE_CLEAR_MATCHES,
 )
-from app.auth import optional_current_user
+from app.rate_limit import enforce
 from app.web_helpers import (
-    OnboardingRequired,
     assert_download_under_user,
     ensure_user_apply_copy,
     flash_redirect,
@@ -74,38 +76,44 @@ def _jobs_query_string(*, status: str, min_score: float, q: str, page: int | Non
 def home(
     request: Request,
     db: Session = Depends(get_db),
-    user: User | None = Depends(optional_current_user),
+):
+    """Public marketing page only — never show app chrome / logout here."""
+    region, region_source = detect_billing_region_detail(
+        dict(request.headers), dict(request.cookies)
+    )
+    is_ng = region == "ng"
+    return templates.TemplateResponse(
+        request,
+        "landing.html",
+        template_ctx(
+            request,
+            None,
+            db,
+            region=region,
+            region_source=region_source,
+            free_clear=FREE_CLEAR_MATCHES,
+            prices={
+                "byok": "₦2,000" if is_ng else "$5",
+                "platform": "₦5,000" if is_ng else "$10",
+                "byok_ng": "₦2,000",
+                "platform_ng": "₦5,000",
+                "byok_intl": "$5",
+                "platform_intl": "$10",
+            },
+        ),
+    )
+
+
+@router.get("/jobs", response_class=HTMLResponse)
+def jobs_board(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_profile_ready),
     status: str = Query(""),
     min_score: float | None = Query(None),
     q: str = Query(""),
     page: int = Query(1, ge=1),
 ):
-    if user is None:
-        region, region_source = detect_billing_region_detail(
-            dict(request.headers), dict(request.cookies)
-        )
-        is_ng = region == "ng"
-        return templates.TemplateResponse(
-            "landing.html",
-            template_ctx(
-                request,
-                None,
-                db,
-                region=region,
-                region_source=region_source,
-                prices={
-                    "byok": "₦2,000" if is_ng else "$5",
-                    "platform": "₦5,000" if is_ng else "$10",
-                    "byok_ng": "₦2,000",
-                    "platform_ng": "₦5,000",
-                    "byok_intl": "$5",
-                    "platform_intl": "$10",
-                },
-            ),
-        )
-    ensure_account(db, user)
-    if not is_profile_confirmed(db, user):
-        raise OnboardingRequired()
     cfg = load_user_settings(db, user)
     threshold = (
         min_score
@@ -146,21 +154,23 @@ def home(
     end = start + len(page_cards)
 
     full_access = has_full_job_access(db, user)
-    clear_ids = (
-        set()
-        if full_access
-        else {int(c.id) for c in baseline[:FREE_CLEAR_MATCHES]}
-    )
+    unlocked_ids = set() if full_access else free_unlocked_listing_ids(db, user)
+    free_remaining = 0 if full_access else free_opens_remaining(db, user)
     job_rows = [
         {
             "card": card,
-            "blurred": not (full_access or card.id in clear_ids),
-            "openable": full_access or card.id in clear_ids,
+            "blurred": not (
+                full_access
+                or listing_is_free_openable(db, user, int(card.id))
+            ),
+            "openable": full_access
+            or listing_is_free_openable(db, user, int(card.id)),
+            "unlocked": full_access or int(card.id) in unlocked_ids,
         }
         for card in page_cards
     ]
 
-    ai_ok, _ = can_use_ai(db, user)
+    ai_ok, ai_reason = can_use_ai(db, user)
     suggest_min = max(0, int(threshold) - 10)
     pager = {
         "page": page_num,
@@ -182,10 +192,16 @@ def home(
     }
 
     locked_count = (
-        0 if full_access else sum(1 for c in matched if c.id not in clear_ids)
+        0
+        if full_access
+        else sum(1 for c in matched if not listing_is_free_openable(db, user, int(c.id)))
     )
+    free_used = 0 if full_access else len(unlocked_ids)
+
+    db.commit()  # persist any newly filled ListingMatchScore rows
 
     return templates.TemplateResponse(
+        request,
         "jobs.html",
         template_ctx(
             request,
@@ -198,34 +214,38 @@ def home(
             q=q_norm,
             pager=pager,
             ai_ok=ai_ok,
+            ai_reason=ai_reason,
             suggest_min=suggest_min,
             full_access=full_access,
             free_clear=FREE_CLEAR_MATCHES,
+            free_remaining=free_remaining,
+            free_used=free_used,
             locked_count=locked_count,
             has_matches=bool(baseline),
+            profile_ready=True,
         ),
     )
 
 
-def _require_listing_access(db: Session, user: User, listing_id: int):
-    card = get_user_job_card(db, user, listing_id)
+def _require_listing_access(db: Session, user: User, job_ref: str):
+    card = get_user_job_card_by_public_id(db, user, job_ref)
     if not card:
         raise HTTPException(404, "Job not found")
-    ok, reason = can_open_listing(db, user, listing_id)
+    ok, reason = can_open_listing(db, user, card.id)
     if not ok:
         raise HTTPException(403, reason)
     return card
 
 
-@router.get("/jobs/{job_id}", response_class=HTMLResponse)
+@router.get("/jobs/{job_ref}", response_class=HTMLResponse)
 async def job_detail(
-    job_id: int,
+    job_ref: str,
     request: Request,
     db: Session = Depends(get_db),
     user: User = Depends(require_profile_ready),
 ):
     try:
-        card = _require_listing_access(db, user, job_id)
+        card = _require_listing_access(db, user, job_ref)
     except HTTPException as exc:
         if exc.status_code == 403:
             return flash_redirect("/billing", str(exc.detail))
@@ -244,6 +264,7 @@ async def job_detail(
     copy = await ensure_user_apply_copy(db, user, card)
     db.commit()
     return templates.TemplateResponse(
+        request,
         "job_detail.html",
         template_ctx(
             request,
@@ -285,10 +306,10 @@ def rescore(
     n = rescore_user_jobs(db, user)
     if n == 0:
         return flash_redirect(
-            "/",
+            "/jobs",
             "Scores are computed live from the catalogue. Open a job to start tracking status.",
         )
-    return flash_redirect("/", f"Refreshed {n} saved ranking(s) for your profile")
+    return flash_redirect("/jobs", f"Refreshed {n} saved ranking(s) for your profile")
 
 
 @router.get("/paste", response_class=HTMLResponse)
@@ -298,6 +319,7 @@ def paste_form(
     user: User = Depends(require_profile_ready),
 ):
     return templates.TemplateResponse(
+        request,
         "paste.html",
         template_ctx(request, user, db, error=""),
     )
@@ -314,8 +336,10 @@ async def paste_submit(
     url: str = Form(""),
     description: str = Form(""),
 ):
+    enforce("paste", user_id=user.id, redirect_path="/paste")
     if not url.strip() and not description.strip() and not title.strip():
         return templates.TemplateResponse(
+            request,
             "paste.html",
             template_ctx(
                 request,
@@ -329,6 +353,7 @@ async def paste_submit(
     url_clean = safe_http_url(url) or ""
     if url.strip() and not url_clean:
         return templates.TemplateResponse(
+            request,
             "paste.html",
             template_ctx(request, user, db, error="URL must start with http:// or https://"),
             status_code=400,
@@ -342,24 +367,25 @@ async def paste_submit(
         url=url_clean,
         description=description,
     )
-    return flash_redirect(f"/jobs/{card.id}", "Private job added")
+    return flash_redirect(job_path(card), "Private job added")
 
 
-@router.post("/jobs/{job_id}/generate")
+@router.post("/jobs/{job_ref}/generate")
 async def generate_cv(
-    job_id: int,
+    job_ref: str,
     db: Session = Depends(get_db),
     user: User = Depends(require_profile_ready),
 ):
+    enforce("ai", user_id=user.id, redirect_path=f"/jobs/{job_ref}")
     try:
-        card = _require_listing_access(db, user, job_id)
+        card = _require_listing_access(db, user, job_ref)
     except HTTPException as exc:
         if exc.status_code == 403:
             return flash_redirect("/billing", str(exc.detail))
         raise
     ai_ok, reason = can_use_ai(db, user)
     if not ai_ok:
-        return flash_redirect(f"/jobs/{job_id}", reason)
+        return flash_redirect(f"/jobs/{job_ref}", reason)
     creds = llm_creds_for_user(db, user)
     profile = load_user_profile_dict(db, user)
     up = get_active_profile(db, user)
@@ -368,7 +394,7 @@ async def generate_cv(
         bits = [b for b in [up.email, up.phone, up.linkedin, up.github] if b]
         if bits:
             profile = {**profile, "name": display, "contact": " | ".join(bits)}
-    out = await generate_resume_files(
+    out, used_fallback = await generate_resume_files(
         card,
         profile=profile,
         creds=creds,
@@ -379,18 +405,23 @@ async def generate_cv(
     card.user_job.output_dir = str(out)
     card.user_job.status = JobStatus.CV_READY.value
     db.commit()
-    return flash_redirect(f"/jobs/{job_id}", "CV generated")
+    msg = (
+        "CV generated with rule-based fallback (AI rewrite unavailable)"
+        if used_fallback
+        else "CV generated"
+    )
+    return flash_redirect(f"/jobs/{job_ref}", msg)
 
 
-@router.post("/jobs/{job_id}/status")
+@router.post("/jobs/{job_ref}/status")
 def set_status(
-    job_id: int,
+    job_ref: str,
     status: str = Form(...),
     db: Session = Depends(get_db),
     user: User = Depends(require_profile_ready),
 ):
     try:
-        card = _require_listing_access(db, user, job_id)
+        card = _require_listing_access(db, user, job_ref)
     except HTTPException as exc:
         if exc.status_code == 403:
             return flash_redirect("/billing", str(exc.detail))
@@ -400,108 +431,111 @@ def set_status(
         raise HTTPException(400, "Invalid status")
     card.user_job.status = status
     db.commit()
-    return flash_redirect(f"/jobs/{job_id}", "Status updated")
+    return flash_redirect(f"/jobs/{job_ref}", "Status updated")
 
 
-@router.post("/jobs/{job_id}/rewrite/cover")
+@router.post("/jobs/{job_ref}/rewrite/cover")
 async def rewrite_cover(
-    job_id: int,
+    job_ref: str,
     db: Session = Depends(get_db),
     user: User = Depends(require_profile_ready),
 ):
+    enforce("ai", user_id=user.id, redirect_path=f"/jobs/{job_ref}")
     try:
-        card = _require_listing_access(db, user, job_id)
+        card = _require_listing_access(db, user, job_ref)
     except HTTPException as exc:
         if exc.status_code == 403:
             return flash_redirect("/billing", str(exc.detail))
         raise
     ai_ok, reason = can_use_ai(db, user)
     if not ai_ok:
-        return flash_redirect(f"/jobs/{job_id}", reason)
+        return flash_redirect(f"/jobs/{job_ref}", reason)
     await ensure_user_apply_copy(db, user, card, force_cover=True)
     db.commit()
-    return flash_redirect(f"/jobs/{job_id}", "Cover note rewritten")
+    return flash_redirect(f"/jobs/{job_ref}", "Cover note rewritten")
 
 
-@router.post("/jobs/{job_id}/rewrite/answers")
+@router.post("/jobs/{job_ref}/rewrite/answers")
 async def rewrite_answers(
-    job_id: int,
+    job_ref: str,
     db: Session = Depends(get_db),
     user: User = Depends(require_profile_ready),
 ):
+    enforce("ai", user_id=user.id, redirect_path=f"/jobs/{job_ref}")
     try:
-        card = _require_listing_access(db, user, job_id)
+        card = _require_listing_access(db, user, job_ref)
     except HTTPException as exc:
         if exc.status_code == 403:
             return flash_redirect("/billing", str(exc.detail))
         raise
     ai_ok, reason = can_use_ai(db, user)
     if not ai_ok:
-        return flash_redirect(f"/jobs/{job_id}", reason)
+        return flash_redirect(f"/jobs/{job_ref}", reason)
     await ensure_user_apply_copy(db, user, card, force_answers=True)
     db.commit()
-    return flash_redirect(f"/jobs/{job_id}", "Application answers rewritten")
+    return flash_redirect(f"/jobs/{job_ref}", "Application answers rewritten")
 
 
-@router.post("/jobs/{job_id}/rewrite/answer")
+@router.post("/jobs/{job_ref}/rewrite/answer")
 async def rewrite_one_answer(
-    job_id: int,
+    job_ref: str,
     question: str = Form(...),
     db: Session = Depends(get_db),
     user: User = Depends(require_profile_ready),
 ):
+    enforce("ai", user_id=user.id, redirect_path=f"/jobs/{job_ref}")
     try:
-        card = _require_listing_access(db, user, job_id)
+        card = _require_listing_access(db, user, job_ref)
     except HTTPException as exc:
         if exc.status_code == 403:
             return flash_redirect("/billing", str(exc.detail))
         raise
     ai_ok, reason = can_use_ai(db, user)
     if not ai_ok:
-        return flash_redirect(f"/jobs/{job_id}", reason)
+        return flash_redirect(f"/jobs/{job_ref}", reason)
     await ensure_user_apply_copy(db, user, card)
+    existing = load_apply_draft_db(db, user, card.id)
     copy = await rewrite_answer_in_draft(
         card,
         question,
         apply_profile_from_user(db, user),
         creds=llm_creds_for_user(db, user),
-        user_id=str(user.id),
+        existing=existing,
     )
     save_apply_draft_db(db, user, card.id, copy)
     db.commit()
-    return flash_redirect(f"/jobs/{job_id}", f"Rewrote: {question}")
+    return flash_redirect(f"/jobs/{job_ref}", f"Rewrote: {question}")
 
 
-@router.post("/jobs/{job_id}/save-copy")
+@router.post("/jobs/{job_ref}/save-copy")
 async def save_apply_copy(
-    job_id: int,
+    job_ref: str,
     cover_blurb: str = Form(""),
     db: Session = Depends(get_db),
     user: User = Depends(require_profile_ready),
 ):
     try:
-        card = _require_listing_access(db, user, job_id)
+        card = _require_listing_access(db, user, job_ref)
     except HTTPException as exc:
         if exc.status_code == 403:
             return flash_redirect("/billing", str(exc.detail))
         raise
     draft = await ensure_user_apply_copy(db, user, card, use_ai=False)
     payload = {"cover_blurb": cover_blurb, "answers": draft["answers"]}
-    save_job_draft(card.id, payload, user_id=str(user.id))
     save_apply_draft_db(db, user, card.id, payload)
     db.commit()
-    return flash_redirect(f"/jobs/{job_id}", "Cover note saved")
+    return flash_redirect(f"/jobs/{job_ref}", "Cover note saved")
 
 
-@router.get("/jobs/{job_id}/download/{filename}")
+@router.get("/jobs/{job_ref}/download/{filename}")
 def download_file(
-    job_id: int,
+    job_ref: str,
     filename: str,
     db: Session = Depends(get_db),
     user: User = Depends(require_profile_ready),
 ):
     try:
-        card = _require_listing_access(db, user, job_id)
+        card = _require_listing_access(db, user, job_ref)
     except HTTPException as exc:
         if exc.status_code == 403:
             return flash_redirect("/billing", str(exc.detail))

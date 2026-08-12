@@ -41,13 +41,36 @@ def ensure_account(db: Session, user: User) -> None:
 
     Does not reset active_profile_id when the user already has a valid one.
     Updates the User row via this sync Session so auth-session user objects stay out of the way.
+    Fast-path within a Session when account rows already exist (see db.info).
     """
+    ready_key = f"account_ready:{user.id}"
+    if db.info.get(ready_key):
+        if user.active_profile_id is None:
+            sync_user = db.get(User, user.id)
+            if sync_user is not None:
+                user.active_profile_id = sync_user.active_profile_id
+        return
+
     sync_user = db.get(User, user.id)
     if sync_user is None:
         # Extremely rare race; attach provided user.
         sync_user = user
         db.add(sync_user)
         db.flush()
+
+    # Hot path: active profile + settings + billing already present.
+    if sync_user.active_profile_id is not None:
+        active = db.get(Profile, sync_user.active_profile_id)
+        if (
+            active is not None
+            and active.user_id == sync_user.id
+            and active.archived_at is None
+            and db.get(UserSettings, sync_user.id) is not None
+            and db.get(ProfileBilling, active.id) is not None
+        ):
+            user.active_profile_id = sync_user.active_profile_id
+            db.info[ready_key] = True
+            return
 
     profile = (
         db.query(Profile)
@@ -118,3 +141,4 @@ def ensure_account(db: Session, user: User) -> None:
 
     user_data_dir(sync_user.id)
     db.flush()
+    db.info[ready_key] = True

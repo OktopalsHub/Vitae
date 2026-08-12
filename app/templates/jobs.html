@@ -2,37 +2,54 @@
 {% block title %}Jobs · Vitae{% endblock %}
 {% block content %}
 <section class="jobs-page">
-  <div class="page-head page-head--jobs">
-    <div>
-      <p class="eyebrow">Matches</p>
+  <header class="page-head page-head--jobs">
+    <div class="page-head__copy">
+      <p class="eyebrow">Your matches</p>
       <h1>
         {% if pager.total %}
-          {{ pager.total }} role{% if pager.total != 1 %}s{% endif %} fit
+          {{ pager.total }} role{% if pager.total != 1 %}s{% endif %}
         {% else %}
           No strong fits yet
         {% endif %}
       </h1>
-      <p class="lede">Open roles scoring ≥{{ '%.0f'|format(min_score) }}% against your {{ active_profile.label if active_profile else "CV" }} profile.</p>
+      <p class="lede">
+        Scored ≥{{ '%.0f'|format(min_score) }}% against
+        {{ active_profile.label if active_profile else "your CV" }}.
+      </p>
     </div>
     <div class="page-actions">
-      <a class="btn" href="/paste">Paste</a>
+      <a class="btn" href="/paste">Paste a job</a>
       <form action="/rescore" method="post" data-busy>
         <button class="btn" type="submit">Rescore</button>
       </form>
     </div>
-  </div>
+  </header>
 
-  {% if not full_access and locked_count %}
-  <div class="panel tease-banner">
-    <h2>{{ free_clear }} clear matches · {{ locked_count }} locked</h2>
-    <p class="meta" style="margin:0">Upgrade to open every fit and unlock AI tailored CVs.</p>
-    <div class="actions" style="margin-top:var(--s3)">
-      <a class="btn btn-primary" href="/billing">Unlock on Billing</a>
+  {% if not full_access %}
+  <aside class="jobs-unlock" aria-label="Free openings">
+    <div class="jobs-unlock__track" aria-hidden="true">
+      {% for i in range(free_clear) %}
+      <span class="jobs-unlock__pip {% if i < free_used %}is-used{% elif free_remaining %}is-open{% else %}is-spent{% endif %}"></span>
+      {% endfor %}
     </div>
-  </div>
+    <div class="jobs-unlock__copy">
+      {% if free_remaining %}
+      <p class="jobs-unlock__title">{{ free_remaining }} free opening{% if free_remaining != 1 %}s{% endif %} left</p>
+      <p class="meta">Your first {{ free_clear }} listings are free. Open any match; subscribe after that.</p>
+      {% else %}
+      <p class="jobs-unlock__title">Free openings used · {{ locked_count }} locked</p>
+      <p class="meta">Subscribe to open every fit and unlock AI tailored CVs.</p>
+      {% endif %}
+    </div>
+    {% if not free_remaining %}
+    <a class="btn btn-primary" href="/billing">Subscribe</a>
+    {% else %}
+    <a class="btn" href="/billing">See plans</a>
+    {% endif %}
+  </aside>
   {% endif %}
 
-  <form class="jobs-toolbar" method="get" action="/" role="search">
+  <form class="jobs-toolbar" method="get" action="/jobs" role="search">
     <label class="jobs-toolbar__search">Search
       <input type="search" name="q" value="{{ q }}" placeholder="Role, company, or place" autocomplete="off" />
     </label>
@@ -48,31 +65,36 @@
     <label class="jobs-toolbar__score">Min %
       <input type="number" name="min_score" value="{{ '%.0f'|format(min_score) }}" min="0" max="100" step="1" />
     </label>
-    <button class="btn btn-primary" type="submit">Apply</button>
+    <button class="btn btn-primary" type="submit">Filter</button>
   </form>
 
   {% if jobs %}
-  <p class="jobs-range meta">
-    {{ pager.start }}–{{ pager.end }} of {{ pager.total }}
-  </p>
+  <div class="jobs-range-row">
+    <p class="jobs-range meta">{{ pager.start }}–{{ pager.end }} of {{ pager.total }}</p>
+  </div>
 
   <ul class="job-list">
     {% for row in jobs %}
     {% set job = row.card %}
-    <li class="job-row {% if row.blurred %}is-blurred{% endif %}">
+    <li class="job-row {% if row.blurred %}is-blurred{% elif row.unlocked and not full_access %}is-unlocked{% endif %}">
       {% if row.openable %}
-      <a class="job-row__link" href="/jobs/{{ job.id }}" target="_blank" rel="noopener">
+      <a class="job-row__link" href="/jobs/{{ job.public_id }}" target="_blank" rel="noopener">
       {% else %}
-      <a class="job-row__link" href="/billing?flash=Upgrade%20to%20unlock%20more%20matched%20roles." target="_blank" rel="noopener">
+      <a class="job-row__link" href="/billing?flash=You%27ve%20used%20your%20free%20openings.%20Subscribe%20to%20unlock%20more%20roles." target="_blank" rel="noopener">
       {% endif %}
-        <span class="job-row__score" aria-label="{% if row.blurred %}Locked match{% else %}{{ '%.0f'|format(job.match_score) }} percent match{% endif %}">{% if row.blurred %}··{% else %}{{ '%.0f'|format(job.match_score) }}{% endif %}</span>
+        {% if row.blurred %}
+        <span class="job-row__score" aria-label="Locked match"><span class="ring is-low"><span class="ring__label">··</span></span></span>
+        {% else %}
+        {% set score = job.match_score|round|int %}
+        <span class="job-row__score" aria-label="{{ score }} percent match"><span class="ring {% if score >= 75 %}is-high{% elif score >= 50 %}is-mid{% else %}is-low{% endif %}" data-ring="{{ score }}"><span class="ring__label">{{ score }}</span></span></span>
+        {% endif %}
         <span class="job-row__body">
           <span class="job-row__title">{% if row.blurred %}Locked role{% else %}{{ job.title }}{% endif %}</span>
           <span class="job-row__meta">
             {% if row.blurred %}
-              Upgrade to view company &amp; location
+              Subscribe to view company &amp; location
             {% else %}
-              {{ job.company or "Company TBA" }}
+              {% if job.company %}{{ job.company }}{% else %}Company TBA{% endif %}
               {% if job.location %}<span class="dot">·</span>{{ job.location }}{% endif %}
             {% endif %}
           </span>
@@ -90,13 +112,13 @@
   {% if pager.total_pages > 1 %}
   <nav class="pager" aria-label="Jobs pages">
     {% if pager.has_prev %}
-      <a class="btn" href="/?{{ pager.prev_qs }}">Previous</a>
+      <a class="btn" href="/jobs?{{ pager.prev_qs }}">Previous</a>
     {% else %}
       <span class="btn btn-ghost" aria-disabled="true">Previous</span>
     {% endif %}
     <span class="pager__label">Page {{ pager.page }} / {{ pager.total_pages }}</span>
     {% if pager.has_next %}
-      <a class="btn" href="/?{{ pager.next_qs }}">Next</a>
+      <a class="btn" href="/jobs?{{ pager.next_qs }}">Next</a>
     {% else %}
       <span class="btn btn-ghost" aria-disabled="true">Next</span>
     {% endif %}
@@ -106,17 +128,43 @@
   {% else %}
   <div class="jobs-empty">
     {% if not has_matches %}
-      <p><strong>No open roles yet.</strong></p>
+      <p class="jobs-empty__title">No open roles yet</p>
       <p class="meta">Check back shortly{% if is_admin %}, or run <a href="/admin">Admin → Sync now</a>{% endif %}.</p>
     {% else %}
-      <p><strong>Nothing at ≥{{ '%.0f'|format(min_score) }}%.</strong></p>
-      <p class="meta">Try a lower threshold or paste a job you already found.</p>
+      <p class="jobs-empty__title">Nothing at ≥{{ '%.0f'|format(min_score) }}%</p>
+      <p class="meta">Try a lower threshold, or paste a job you already found.</p>
       <div class="page-actions" style="margin-top:var(--s4)">
-        <a class="btn btn-primary" href="/?{{ pager.suggest_qs }}">Try {{ suggest_min }}%</a>
+        <a class="btn btn-primary" href="/jobs?{{ pager.suggest_qs }}">Try {{ suggest_min }}%</a>
         <a class="btn" href="/paste">Paste a job</a>
       </div>
     {% endif %}
   </div>
   {% endif %}
 </section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  var rings = document.querySelectorAll("[data-ring]");
+  var reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  var animate = function (ring) {
+    var target = parseInt(ring.getAttribute("data-ring"), 10) || 0;
+    if (reduce || !("CSS" in window) || !CSS.supports("--foo: 0")) {
+      ring.style.setProperty("--ring-value", target);
+      return;
+    }
+    var start = null;
+    var dur = 900;
+    var ease = function (p) { return 1 - Math.pow(1 - p, 3); };
+    requestAnimationFrame(function step(t) {
+      if (!start) start = t;
+      var p = Math.min((t - start) / dur, 1);
+      ring.style.setProperty("--ring-value", Math.round(target * ease(p)));
+      if (p < 1) requestAnimationFrame(step);
+    });
+  };
+  rings.forEach(animate);
+})();
+</script>
 {% endblock %}

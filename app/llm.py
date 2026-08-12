@@ -120,7 +120,7 @@ async def llm_complete(
         )
 
     if c.kind == "anthropic":
-        return await _anthropic(c, prompt, system, max_tokens, temperature)
+        return await _anthropic(c, prompt, system, max_tokens, temperature, json_mode)
     if c.kind == "gemini":
         return await _gemini(c, prompt, system, json_mode, max_tokens, temperature)
     return await _openai_compatible(c, prompt, system, json_mode, temperature)
@@ -151,19 +151,29 @@ async def _openai_compatible(
 
 
 async def _anthropic(
-    c: LLMCreds, prompt: str, system: str, max_tokens: int, temperature: float
+    c: LLMCreds,
+    prompt: str,
+    system: str,
+    max_tokens: int,
+    temperature: float,
+    json_mode: bool = False,
 ) -> str:
     import anthropic
 
     client = anthropic.AsyncAnthropic(api_key=c.api_key)
+    sys = system or ""
+    if json_mode:
+        sys = (
+            (sys + "\n\n") if sys else ""
+        ) + "Respond with valid JSON only. Do not wrap the JSON in markdown fences or add prose."
     kwargs = {
         "model": c.model or c.anthropic_model,
         "max_tokens": max_tokens,
         "temperature": temperature,
         "messages": [{"role": "user", "content": prompt}],
     }
-    if system:
-        kwargs["system"] = system
+    if sys:
+        kwargs["system"] = sys
     resp = await client.messages.create(**kwargs)
     parts = [b.text for b in resp.content if getattr(b, "type", "") == "text"]
     return "\n".join(parts)

@@ -1,17 +1,25 @@
 from __future__ import annotations
 
+import secrets
 from datetime import datetime
 from typing import Any
 
 from sqlalchemy import or_
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, load_only, noload
 
 from app.config import get_settings, load_yaml_config
+from app.matching.score_cache import (
+    load_scores_for_profile,
+    score_fingerprint,
+    score_listing_cached,
+    upsert_match_score,
+)
 from app.matching.scorer import reasons_to_json, score_job
 from app.models import (
     JobCard,
     JobListing,
     JobStatus,
+    ListingMatchScore,
     ListingVisibility,
     User,
     UserJob,
@@ -25,6 +33,30 @@ from app.accounts import (
     load_user_settings,
 )
 from app.scheduler_state import mark_sync_finished, mark_sync_progress, mark_sync_started
+
+
+def new_listing_public_id() -> str:
+    """Unguessable URL token (~22 url-safe chars)."""
+    return secrets.token_urlsafe(16)[:22]
+
+
+def ensure_listing_public_id(listing: JobListing) -> str:
+    if (listing.public_id or "").strip():
+        return listing.public_id
+    listing.public_id = new_listing_public_id()
+    return listing.public_id
+
+
+def job_path(job: JobCard | JobListing | str) -> str:
+    if isinstance(job, str):
+        ref = job
+    else:
+        ref = getattr(job, "public_id", None) or ""
+        if not ref and hasattr(job, "listing"):
+            ref = getattr(job.listing, "public_id", "") or ""
+    if not ref:
+        raise ValueError("Job has no public_id")
+    return f"/jobs/{ref}"
 
 
 def _score_payload(listing: JobListing) -> dict[str, Any]:
@@ -52,8 +84,19 @@ def job_card_from(
     profile: dict[str, Any],
     cfg: dict[str, Any],
     prefer_cached: bool = True,
+    cached_score: float | None = None,
+    cached_reasons: str | None = None,
 ) -> JobCard:
-    """Build a read model. Scores live unless a scored overlay exists."""
+    """Build a read model. Prefers ListingMatchScore / overlay over live scoring."""
+    if cached_score is not None:
+        return JobCard(
+            listing=listing,
+            match_score=float(cached_score),
+            match_reasons=cached_reasons or "",
+            status=(overlay.status if overlay else JobStatus.NEW.value),
+            output_dir=overlay.output_dir if overlay else None,
+            user_job=overlay,
+        )
     if overlay is not None and prefer_cached and overlay.scored_at is not None:
         return JobCard(
             listing=listing,
@@ -63,7 +106,7 @@ def job_card_from(
             output_dir=overlay.output_dir,
             user_job=overlay,
         )
-    score, reasons = score_listing(listing, profile, cfg)
+    score, reasons = score_listing_cached(listing, profile, cfg)
     return JobCard(
         listing=listing,
         match_score=score,
@@ -96,8 +139,10 @@ def upsert_public_listing(db: Session, raw: RawJob) -> JobListing:
         existing.is_active = True
         existing.closed_at = None
         existing.last_seen_at = now
+        ensure_listing_public_id(existing)
         return existing
     listing = JobListing(
+        public_id=new_listing_public_id(),
         source=raw.source,
         external_id=raw.external_id,
         title=raw.title,
@@ -118,18 +163,28 @@ def upsert_public_listing(db: Session, raw: RawJob) -> JobListing:
     return listing
 
 
-def close_missing_public_listings(db: Session, sync_started_at: datetime) -> int:
-    """Mark public catalogue rows not refreshed in this sync as closed."""
+def close_missing_public_listings(
+    db: Session,
+    sync_started_at: datetime,
+    *,
+    sources: set[str] | None = None,
+) -> int:
+    """Mark public catalogue rows not refreshed in this sync as closed.
+
+    When ``sources`` is provided, only listings from those sources are closed.
+    This avoids deactivating jobs from boards that returned an empty/failed batch.
+    """
     now = datetime.utcnow()
-    rows = (
-        db.query(JobListing)
-        .filter(
-            JobListing.scope_key == "public",
-            JobListing.is_active.is_(True),
-            JobListing.last_seen_at < sync_started_at,
-        )
-        .all()
+    q = db.query(JobListing).filter(
+        JobListing.scope_key == "public",
+        JobListing.is_active.is_(True),
+        JobListing.last_seen_at < sync_started_at,
     )
+    if sources is not None:
+        if not sources:
+            return 0
+        q = q.filter(JobListing.source.in_(sources))
+    rows = q.all()
     for listing in rows:
         listing.is_active = False
         listing.closed_at = now
@@ -220,62 +275,206 @@ def list_job_cards(
     min_score: float = 0,
     q: str = "",
 ) -> list[JobCard]:
-    """Catalogue browse: live-score rows; never fan out UserJob inserts."""
+    """Catalogue browse using persisted ListingMatchScore (lazy-fill misses)."""
     ensure_account(db, user)
-    listings = visible_listings_query(db, user).all()
     active = get_active_profile(db, user)
+    profile = load_user_profile_dict(db, user)
+    cfg = load_user_settings(db, user)
+    fingerprint = score_fingerprint(profile, cfg)
+    score_map = load_scores_for_profile(db, active.id, fingerprint)
+
+    listings = (
+        visible_listings_query(db, user)
+        .options(
+            load_only(
+                JobListing.id,
+                JobListing.public_id,
+                JobListing.source,
+                JobListing.external_id,
+                JobListing.title,
+                JobListing.company,
+                JobListing.location,
+                JobListing.url,
+                JobListing.description,
+                JobListing.salary,
+                JobListing.visibility,
+                JobListing.scope_key,
+                JobListing.owner_user_id,
+                JobListing.is_active,
+            )
+        )
+        .all()
+    )
     overlays = {
         uj.listing_id: uj
         for uj in db.query(UserJob)
+        .options(
+            noload(UserJob.listing),
+            load_only(
+                UserJob.id,
+                UserJob.listing_id,
+                UserJob.match_score,
+                UserJob.match_reasons,
+                UserJob.status,
+                UserJob.output_dir,
+                UserJob.scored_at,
+                UserJob.profile_id,
+                UserJob.user_id,
+            ),
+        )
         .filter(UserJob.profile_id == active.id)
         .all()
     }
-    profile = load_user_profile_dict(db, user)
-    cfg = load_user_settings(db, user)
-    cards: list[JobCard] = []
+
     qn = q.lower().strip()
+    cards: list[JobCard] = []
+    scored_misses = 0
     for listing in listings:
+        ensure_listing_public_id(listing)
         if source and listing.source.lower() != source.lower():
             continue
         if qn:
             blob = f"{listing.title} {listing.company} {listing.location}".lower()
             if qn not in blob:
                 continue
-        card = job_card_from(
-            listing,
-            overlays.get(listing.id),
-            profile=profile,
-            cfg=cfg,
-            prefer_cached=True,
+
+        overlay = overlays.get(listing.id)
+        cached = score_map.get(listing.id)
+        if cached is not None:
+            score = float(cached.match_score or 0)
+            reasons = cached.match_reasons or ""
+        else:
+            score, reasons = score_listing_cached(listing, profile, cfg)
+            upsert_match_score(
+                db,
+                profile_id=active.id,
+                listing_id=listing.id,
+                match_score=score,
+                match_reasons=reasons,
+                fingerprint=fingerprint,
+            )
+            scored_misses += 1
+
+        if score < min_score:
+            continue
+        status_val = (overlay.status if overlay else JobStatus.NEW.value) or JobStatus.NEW.value
+        if status and status_val != status:
+            continue
+        cards.append(
+            JobCard(
+                listing=listing,
+                match_score=score,
+                match_reasons=reasons,
+                status=status_val,
+                output_dir=overlay.output_dir if overlay else None,
+                user_job=overlay,
+            )
         )
-        if card.match_score < min_score:
-            continue
-        if status and card.status != status:
-            continue
-        cards.append(card)
+
     cards.sort(key=lambda c: (-c.match_score, c.title.lower()))
+    if scored_misses:
+        db.flush()
+    else:
+        db.flush()  # persist any newly assigned public_id tokens
     return cards
 
 
+def refresh_profile_match_scores(db: Session, user: User) -> int:
+    """Recompute ListingMatchScore for all visible listings on the active profile."""
+    ensure_account(db, user)
+    active = get_active_profile(db, user)
+    profile = load_user_profile_dict(db, user)
+    cfg = load_user_settings(db, user)
+    fingerprint = score_fingerprint(profile, cfg)
+    listings = visible_listings_query(db, user).all()
+    n = 0
+    for listing in listings:
+        score, reasons = score_listing_cached(listing, profile, cfg)
+        upsert_match_score(
+            db,
+            profile_id=active.id,
+            listing_id=listing.id,
+            match_score=score,
+            match_reasons=reasons,
+            fingerprint=fingerprint,
+        )
+        n += 1
+    db.flush()
+    return n
+
+
 def rescore_user_jobs(db: Session, user: User) -> int:
-    """Refresh scores only on existing overlays — does not materialize the catalogue."""
+    """Refresh persisted match scores + any existing overlays for this user."""
     ensure_account(db, user)
     profile = load_user_profile_dict(db, user)
     cfg = load_user_settings(db, user)
+    n = refresh_profile_match_scores(db, user)
     rows = (
         db.query(UserJob)
         .filter(UserJob.user_id == user.id)
         .all()
     )
-    n = 0
     for overlay in rows:
         listing = overlay.listing or db.get(JobListing, overlay.listing_id)
         if listing is None:
             continue
         refresh_overlay_score(db, user, listing, overlay, profile, cfg)
-        n += 1
     db.commit()
     return n
+
+
+def top_clear_listing_ids(
+    db: Session,
+    user: User,
+    *,
+    limit: int,
+    min_score: float | None = None,
+) -> list[int]:
+    """Top matched listing IDs from the score cache (no full live rescore)."""
+    ensure_account(db, user)
+    active = get_active_profile(db, user)
+    profile = load_user_profile_dict(db, user)
+    cfg = load_user_settings(db, user)
+    threshold = (
+        float(min_score)
+        if min_score is not None
+        else float((cfg.get("search") or {}).get("min_match_score") or 65)
+    )
+    fingerprint = score_fingerprint(profile, cfg)
+
+    # Ensure cache is warm enough for top-N without scoring every row when populated.
+    existing = (
+        db.query(ListingMatchScore.listing_id)
+        .filter(
+            ListingMatchScore.profile_id == active.id,
+            ListingMatchScore.fingerprint == fingerprint,
+        )
+        .limit(1)
+        .first()
+    )
+    if existing is None:
+        # Cold profile: fill cache once (same cost as one old /jobs load).
+        refresh_profile_match_scores(db, user)
+        db.commit()
+
+    q = (
+        db.query(ListingMatchScore.listing_id)
+        .join(JobListing, JobListing.id == ListingMatchScore.listing_id)
+        .filter(
+            ListingMatchScore.profile_id == active.id,
+            ListingMatchScore.fingerprint == fingerprint,
+            ListingMatchScore.match_score >= threshold,
+            JobListing.is_active.is_(True),
+            or_(
+                JobListing.visibility == ListingVisibility.PUBLIC.value,
+                (JobListing.visibility == ListingVisibility.PRIVATE.value)
+                & (JobListing.owner_user_id == user.id),
+            ),
+        )
+        .order_by(ListingMatchScore.match_score.desc(), JobListing.title.asc())
+        .limit(max(1, int(limit)))
+    )
+    return [int(row[0]) for row in q.all()]
 
 
 async def sync_public_jobs(db: Session) -> dict[str, Any]:
@@ -295,7 +494,7 @@ async def sync_public_jobs(db: Session) -> dict[str, Any]:
             url_index[key] = cand
 
     created = updated = reopened = fetched = 0
-    any_batch = False
+    sources_with_data: set[str] = set()
     try:
         async for label, batch in iter_fetch_sources(cfg, settings):
             if not batch:
@@ -303,7 +502,6 @@ async def sync_public_jobs(db: Session) -> dict[str, Any]:
                     source=label, fetched=fetched, created=created, updated=updated
                 )
                 continue
-            any_batch = True
             batch = dedupe_raw_jobs(list(batch))
             seen_in_batch: set[str] = set()
             for raw in batch:
@@ -311,6 +509,7 @@ async def sync_public_jobs(db: Session) -> dict[str, Any]:
                 if dkey in seen_in_batch:
                     continue
                 seen_in_batch.add(dkey)
+                sources_with_data.add(raw.source)
                 before = (
                     db.query(JobListing)
                     .filter(
@@ -360,8 +559,10 @@ async def sync_public_jobs(db: Session) -> dict[str, Any]:
             )
 
         closed = 0
-        if any_batch:
-            closed = close_missing_public_listings(db, sync_started_at)
+        if sources_with_data:
+            closed = close_missing_public_listings(
+                db, sync_started_at, sources=sources_with_data
+            )
             db.commit()
         result = {
             "fetched": fetched,
@@ -401,6 +602,7 @@ async def add_pasted_job_for_user(
         description=description,
     )
     listing = JobListing(
+        public_id=new_listing_public_id(),
         source="paste",
         external_id=raw.external_id,
         title=raw.title,
@@ -418,10 +620,26 @@ async def add_pasted_job_for_user(
     db.add(listing)
     db.flush()
     overlay = ensure_user_job(db, user, listing, profile=profile, cfg=cfg)
+    score, reasons = score_listing_cached(listing, profile, cfg)
+    upsert_match_score(
+        db,
+        profile_id=get_active_profile(db, user).id,
+        listing_id=listing.id,
+        match_score=score,
+        match_reasons=reasons,
+        fingerprint=score_fingerprint(profile, cfg),
+    )
     db.commit()
     db.refresh(listing)
     db.refresh(overlay)
-    return job_card_from(listing, overlay, profile=profile, cfg=cfg)
+    return job_card_from(
+        listing,
+        overlay,
+        profile=profile,
+        cfg=cfg,
+        cached_score=score,
+        cached_reasons=reasons,
+    )
 
 
 def get_user_job_card(db: Session, user: User, listing_id: int) -> JobCard | None:
@@ -429,6 +647,27 @@ def get_user_job_card(db: Session, user: User, listing_id: int) -> JobCard | Non
     listing = db.get(JobListing, listing_id)
     if not listing:
         return None
+    return _card_for_visible_listing(db, user, listing)
+
+
+def get_user_job_card_by_public_id(db: Session, user: User, public_id: str) -> JobCard | None:
+    ref = (public_id or "").strip()
+    if not ref or ref.isdigit():
+        # Reject sequential integer guessing — only opaque tokens are valid.
+        return None
+    listing = (
+        db.query(JobListing)
+        .filter(JobListing.public_id == ref)
+        .one_or_none()
+    )
+    if not listing:
+        return None
+    return _card_for_visible_listing(db, user, listing)
+
+
+def _card_for_visible_listing(
+    db: Session, user: User, listing: JobListing
+) -> JobCard | None:
     if listing.visibility == ListingVisibility.PRIVATE.value:
         if listing.owner_user_id != user.id:
             return None
@@ -436,6 +675,7 @@ def get_user_job_card(db: Session, user: User, listing_id: int) -> JobCard | Non
         return None
     elif not listing.is_active:
         return None
+    ensure_listing_public_id(listing)
     profile = load_user_profile_dict(db, user)
     cfg = load_user_settings(db, user)
     overlay = ensure_user_job(db, user, listing, profile=profile, cfg=cfg)

@@ -45,6 +45,12 @@ class Settings(BaseSettings):
     # Leave false locally so clients cannot spoof NG rates.
     trust_edge_geo: bool = False
     max_upload_bytes: int = 8 * 1024 * 1024
+    # Separate from SECRET_KEY so JWT rotation does not invalidate BYOK ciphertext.
+    fernet_secret_key: str = ""
+    # In-process rate limits (requests per 60s). Set 0 to disable a bucket.
+    rate_limit_auth: int = 10
+    rate_limit_paste: int = 20
+    rate_limit_ai: int = 15
 
     model_config = {"env_file": str(ROOT_DIR / ".env"), "extra": "ignore"}
 
@@ -58,7 +64,7 @@ def get_settings() -> Settings:
 
 
 def assert_secure_settings() -> None:
-    """Refuse to boot in production with the default JWT/Fernet secret."""
+    """Refuse to boot in production with the default JWT secret."""
     s = get_settings()
     env = (s.app_env or "").strip().lower()
     prod_like = env in {"production", "prod", "cloud"} or (

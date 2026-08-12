@@ -35,6 +35,7 @@ from app.web_helpers import (
     read_upload_limited,
     require_profile_ready,
     template_ctx,
+    validate_upload_content,
     validate_upload_filename,
 )
 
@@ -55,6 +56,7 @@ def settings_page(
     up = get_active_profile(db, user)
     billing = get_profile_billing(db, user, up)
     return templates.TemplateResponse(
+        request,
         "settings.html",
         template_ctx(
             request,
@@ -125,6 +127,7 @@ async def upload_cv(
     try:
         name = validate_upload_filename(file.filename)
         content = read_upload_limited(await file.read())
+        validate_upload_content(name, content)
     except ValueError as exc:
         return flash_redirect("/settings", str(exc))
     dest = profile_data_dir(user.id, get_active_profile(db, user).id) / name

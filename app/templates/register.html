@@ -17,8 +17,14 @@
     </form>
     <p class="divider">Or continue with</p>
     <div class="oauth-row">
-      <a class="btn" href="/auth/google/authorize">Google</a>
-      <a class="btn" href="/auth/github/authorize">GitHub</a>
+      <a class="btn oauth-btn" href="/auth/google/authorize">
+        <img class="oauth-btn__icon" src="/static/logos/google.svg" alt="" width="18" height="18" />
+        Google
+      </a>
+      <a class="btn oauth-btn" href="/auth/github/authorize">
+        <img class="oauth-btn__icon oauth-btn__icon--github" src="/static/logos/github.svg" alt="" width="18" height="18" />
+        GitHub
+      </a>
     </div>
     <p class="meta" style="margin-top:var(--s5)">Already have an account? <a href="/login">Sign in</a></p>
   </div>

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import functools
 import re
 
 TITLE_INCLUDE = (
@@ -153,8 +154,12 @@ def skill_in_text(skill: str, text: str) -> bool:
     s = _norm(skill)
     if len(s) < 2:
         return False
-    # Escape then restore common tech dots
     if re.fullmatch(r"[a-z0-9.+#\-]+", s):
-        pat = r"(?<![a-z0-9])" + re.escape(s).replace(r"\.", r"\.?") + r"(?![a-z0-9])"
-        return re.search(pat, text) is not None
+        return _skill_pattern(s).search(text) is not None
     return s in text
+
+
+@functools.lru_cache(maxsize=512)
+def _skill_pattern(skill_norm: str) -> re.Pattern[str]:
+    pat = r"(?<![a-z0-9])" + re.escape(skill_norm).replace(r"\.", r"\.?") + r"(?![a-z0-9])"
+    return re.compile(pat)

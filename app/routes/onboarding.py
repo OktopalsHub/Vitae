@@ -23,6 +23,7 @@ from app.web_helpers import (
     read_upload_limited,
     require_user,
     template_ctx,
+    validate_upload_content,
     validate_upload_filename,
 )
 
@@ -66,10 +67,11 @@ def onboarding_upload(
     up = get_active_profile(db, user)
     assert up
     if up.profile_confirmed:
-        return RedirectResponse("/", status_code=303)
+        return RedirectResponse("/jobs", status_code=303)
     if up.master_cv_path and up.profile_json and up.profile_json != "{}":
         return RedirectResponse("/onboarding/review/basics", status_code=303)
     return templates.TemplateResponse(
+        request,
         "onboarding/upload.html",
         template_ctx(
             request,
@@ -90,6 +92,7 @@ async def onboarding_upload_post(
     try:
         name = validate_upload_filename(file.filename)
         content = read_upload_limited(await file.read())
+        validate_upload_content(name, content)
     except ValueError as exc:
         return flash_redirect("/onboarding", str(exc))
 
@@ -138,7 +141,7 @@ def onboarding_review(
     up = get_active_profile(db, user)
     assert up
     if up.profile_confirmed:
-        return RedirectResponse("/", status_code=303)
+        return RedirectResponse("/jobs", status_code=303)
     if not up.master_cv_path:
         return RedirectResponse("/onboarding", status_code=303)
     keys = {k for k, _ in ONBOARDING_SECTIONS}
@@ -147,6 +150,7 @@ def onboarding_review(
 
     profile = load_user_profile_dict(db, user)
     return templates.TemplateResponse(
+        request,
         "onboarding/review.html",
         template_ctx(
             request,

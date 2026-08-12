@@ -93,7 +93,7 @@ async def fetch_adzuna(
     app_key: str,
     queries: list[str],
     country: str = "gb",
-    results_per_page: int = 25,
+    results_per_page: int = 20,
     max_results: int = 40,
     excludes: list[str] | None = None,
 ) -> list[RawJob]:
@@ -698,7 +698,7 @@ async def fetch_wellfound(
                             loc = f"Remote · {', '.join(str(x) for x in locs)}"
                     else:
                         loc = ", ".join(str(x) for x in locs) if locs else "N/A"
-                    company = job_to_company.get(jid) or "Wellfound startup"
+                    company = job_to_company.get(jid) or ""
                     jobs.append(
                         RawJob(
                             source="wellfound",
@@ -769,7 +769,7 @@ async def fetch_ziprecruiter(
                             continue
                         seen.add(guid)
                         company_el = item.find("company") or item.find("author")
-                        company = company_el.get_text(strip=True) if company_el else "ZipRecruiter"
+                        company = company_el.get_text(strip=True) if company_el else ""
                         jobs.append(
                             RawJob(
                                 source="ziprecruiter",

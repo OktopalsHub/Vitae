@@ -22,9 +22,6 @@ def score_job_detail(
 ) -> dict[str, Any]:
     """Full match breakdown for UI + scoring."""
     title = _norm(job.get("title") or "")
-    desc = _norm(job.get("description") or "")
-    location = _norm(job.get("location") or "")
-    blob = f"{title} {desc}"
     reasons: list[str] = []
     positives: list[dict[str, Any]] = []
     penalties: list[dict[str, Any]] = []
@@ -65,6 +62,14 @@ def score_job_detail(
             "foreign_stack": foreign,
             "connection_summary": "Weak fit: role is labeled for another language stack.",
         }
+
+    # Cap description for ranking CPU / memory (detail UI may still pass full text).
+    desc_raw = job.get("description") or ""
+    if len(desc_raw) > 6000:
+        desc_raw = desc_raw[:6000]
+    desc = _norm(desc_raw)
+    location = _norm(job.get("location") or "")
+    blob = f"{title} {desc}"
 
     if not has_target_stack_signal(blob):
         return {

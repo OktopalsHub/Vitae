@@ -8,7 +8,7 @@
   <p class="lede">Admins and super admins get the full catalogue and AI without a paid plan. Optionally set a personal LLM key in Settings to override platform AI.</p>
   {% else %}
   <h1>Unlock matches &amp; AI</h1>
-  <p class="lede">Billing is per profile. You’re managing <strong>{{ billing_profile.label }}</strong>{% if active_profile and billing_profile and active_profile.id == billing_profile.id %} (active track){% endif %}. Free profiles get {{ free_clear }} clear matches — subscribe to unlock this track’s full list and AI.</p>
+  <p class="lede">Billing is per profile. You’re managing <strong>{{ billing_profile.label }}</strong>{% if active_profile and billing_profile and active_profile.id == billing_profile.id %} (active track){% endif %}. Each profile gets {{ free_clear }} free listing opens once — then subscribe to unlock this track’s full list and AI.</p>
   {% endif %}
 </div>
 
@@ -21,11 +21,11 @@
 {% else %}
 <div class="panel">
   <h3 class="rule-title" style="margin-top:0">Current plan</h3>
-  <p style="margin:0"><strong>{% if plan == 'none' %}Free — {{ free_clear }} clear matches{% elif plan == 'byok_monthly' %}Bring your own AI{% elif plan == 'platform_monthly' %}Platform AI{% else %}{{ plan }}{% endif %}</strong>
+  <p style="margin:0"><strong>{% if plan == 'none' %}Free — {{ free_clear }} one-time openings{% elif plan == 'byok_monthly' %}Bring your own AI{% elif plan == 'platform_monthly' %}Platform AI{% else %}{{ plan }}{% endif %}</strong>
     {% if subscription_status %} · <span class="meta">{{ subscription_status }}</span>{% endif %}
   </p>
   <div class="actions" style="margin-top:var(--s4)">
-    <a class="btn" href="/">Skip — continue with preview</a>
+    <a class="btn" href="/jobs">Skip — continue free</a>
   </div>
 </div>
 

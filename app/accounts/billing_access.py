@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 from sqlalchemy.orm import Session
 
 from app.accounts.bootstrap import ensure_account
@@ -23,7 +25,7 @@ _PAID_PLANS = frozenset(
     }
 )
 
-# Clear matches free profiles may open before upgrading.
+# One-time free listing opens per career profile (not monthly / not rotating).
 FREE_CLEAR_MATCHES = 3
 
 
@@ -68,19 +70,72 @@ def has_full_job_access(db: Session, user: User) -> bool:
     return billing.plan in _PAID_PLANS and _subscription_active(billing)
 
 
-def free_clear_listing_ids(db: Session, user: User) -> set[int]:
-    """Top matched listing ids a free profile may open (by default match threshold)."""
-    from app.accounts.settings import load_user_settings
-    from app.services import list_job_cards
+def free_unlocked_listing_ids(db: Session, user: User) -> set[int]:
+    """Listing ids this free profile has already opened (one-time grant)."""
+    ensure_account(db, user)
+    profile = get_active_profile(db, user)
+    if profile is None:
+        return set()
+    try:
+        raw = json.loads(profile.free_unlocked_json or "[]")
+    except (TypeError, ValueError, json.JSONDecodeError):
+        raw = []
+    out: set[int] = set()
+    if not isinstance(raw, list):
+        return out
+    for item in raw:
+        try:
+            out.add(int(item))
+        except (TypeError, ValueError):
+            continue
+    return out
 
-    cfg = load_user_settings(db, user)
-    threshold = float((cfg.get("search") or {}).get("min_match_score") or 65)
-    cards = list_job_cards(db, user, min_score=threshold)
-    return {int(c.id) for c in cards[:FREE_CLEAR_MATCHES]}
+
+def free_opens_remaining(db: Session, user: User) -> int:
+    return max(0, FREE_CLEAR_MATCHES - len(free_unlocked_listing_ids(db, user)))
+
+
+def free_clear_listing_ids(db: Session, user: User) -> set[int]:
+    """Back-compat alias: listings already claimed under the free grant."""
+    return free_unlocked_listing_ids(db, user)
+
+
+def claim_free_listing_open(db: Session, user: User, listing_id: int) -> bool:
+    """Claim one one-time free open. True if unlocked (already or newly claimed)."""
+    ensure_account(db, user)
+    profile = get_active_profile(db, user)
+    if profile is None:
+        return False
+    unlocked = free_unlocked_listing_ids(db, user)
+    if listing_id in unlocked:
+        return True
+    if len(unlocked) >= FREE_CLEAR_MATCHES:
+        return False
+    unlocked.add(int(listing_id))
+    profile.free_unlocked_json = json.dumps(sorted(unlocked))
+    db.add(profile)
+    db.flush()
+    return True
+
+
+def listing_is_free_openable(db: Session, user: User, listing_id: int) -> bool:
+    """Board gate: own pastes, already unlocked, or free opens remain (claim on open)."""
+    listing = db.get(JobListing, listing_id)
+    if listing is None:
+        return False
+    if (
+        listing.visibility == ListingVisibility.PRIVATE.value
+        and listing.owner_user_id == user.id
+    ):
+        return True
+    unlocked = free_unlocked_listing_ids(db, user)
+    if listing_id in unlocked:
+        return True
+    return len(unlocked) < FREE_CLEAR_MATCHES
 
 
 def can_open_listing(db: Session, user: User, listing_id: int) -> tuple[bool, str]:
-    """Staff/paid profile: any visible role. Free: top matches only; own pastes always ok."""
+    """Staff/paid profile: any visible role. Free: first N opens ever; own pastes always ok."""
     ensure_account(db, user)
     listing = db.get(JobListing, listing_id)
     if listing is None:
@@ -94,9 +149,9 @@ def can_open_listing(db: Session, user: User, listing_id: int) -> tuple[bool, st
         return False, "This listing is no longer open."
     if has_full_job_access(db, user):
         return True, "full"
-    if listing_id in free_clear_listing_ids(db, user):
+    if claim_free_listing_open(db, user, listing_id):
         return True, "preview"
-    return False, "Upgrade this profile on Billing to unlock more matched roles."
+    return False, "You've used your free openings. Subscribe on Billing to unlock more roles."
 
 
 def llm_creds_for_user(db: Session, user: User):

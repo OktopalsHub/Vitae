@@ -17,6 +17,7 @@ from app.auth import (
 )
 from app.config import project_path
 from app.models import User
+from app.rate_limit import rate_limit
 from app.web_helpers import (
     redirect_with_auth_cookie,
     safe_next_path,
@@ -33,14 +34,15 @@ async def login_page(
     user: User | None = Depends(optional_current_user),
 ):
     if user:
-        return RedirectResponse("/", status_code=303)
+        return RedirectResponse("/jobs", status_code=303)
     return templates.TemplateResponse(
+        request,
         "login.html",
         template_ctx(
             request,
             None,
             error=request.query_params.get("error", ""),
-            next=safe_next_path(request.query_params.get("next"), "/"),
+            next=safe_next_path(request.query_params.get("next"), "/jobs"),
         ),
     )
 
@@ -49,15 +51,16 @@ async def login_page(
 async def login_form(
     email: str = Form(...),
     password: str = Form(...),
-    next: str = Form("/"),
+    next: str = Form("/jobs"),
     user_manager=Depends(get_user_manager),
+    _rl=Depends(rate_limit("auth", redirect_path="/login")),
 ):
     class _Creds:
         def __init__(self, username: str, password: str):
             self.username = username
             self.password = password
 
-    dest = safe_next_path(next, "/")
+    dest = safe_next_path(next, "/jobs")
     user = await user_manager.authenticate(_Creds(email.strip().lower(), password))
     if user is None or not user.is_active:
         return RedirectResponse(
@@ -74,8 +77,9 @@ async def register_page(
     user: User | None = Depends(optional_current_user),
 ):
     if user:
-        return RedirectResponse("/", status_code=303)
+        return RedirectResponse("/jobs", status_code=303)
     return templates.TemplateResponse(
+        request,
         "register.html",
         template_ctx(request, None, error=request.query_params.get("error", "")),
     )
@@ -86,6 +90,7 @@ async def register_form(
     email: str = Form(...),
     password: str = Form(...),
     user_manager=Depends(get_user_manager),
+    _rl=Depends(rate_limit("auth", redirect_path="/register")),
 ):
     try:
         user = await user_manager.create(

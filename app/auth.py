@@ -35,7 +35,10 @@ def _async_database_url() -> str:
 
 
 _ASYNC_URL = _async_database_url()
-_async_engine = create_async_engine(_ASYNC_URL, pool_pre_ping=True)
+_async_kwargs: dict = {"pool_pre_ping": True}
+if not _ASYNC_URL.startswith("sqlite"):
+    _async_kwargs.update({"pool_size": 5, "max_overflow": 10, "pool_recycle": 1800})
+_async_engine = create_async_engine(_ASYNC_URL, **_async_kwargs)
 _async_session_maker = async_sessionmaker(_async_engine, expire_on_commit=False)
 
 

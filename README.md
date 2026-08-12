@@ -4,15 +4,18 @@ Personal job matching: upload your CV, confirm your profile, see roles that matc
 
 ## Quick start (local)
 
+Requires [uv](https://docs.astral.sh/uv/) and Python 3.12.
+
 ```bash
-python -m venv .venv
-source .venv/Scripts/activate   # Windows Git Bash
-pip install -r requirements.txt
-cp .env.example .env
-python run.py
+# Install uv if needed: https://docs.astral.sh/uv/getting-started/installation/
+uv sync
+cp .env.example .env   # or copy from .env.local
+uv run python run.py
 ```
 
 Open http://127.0.0.1:8765
+
+`uv sync` creates/manages `.venv` for you — you do not need `python -m venv` or `pip install`.
 
 Local `.env` can use SQLite (`DATABASE_URL=sqlite:///./data/jobs.db`) and the default `SECRET_KEY`.  
 Each user uploads their own CV — do not commit personal DOCX files.
@@ -43,6 +46,7 @@ Set these in Cloud env (never commit secrets):
 | `APP_HOST` | `0.0.0.0` |
 | `DATABASE_URL` | Postgres (Neon). Not SQLite. |
 | `SECRET_KEY` | Strong unique secret (required — app refuses the default) |
+| `FERNET_SECRET_KEY` | Recommended separate secret for BYOK key encryption |
 | `OAUTH_REDIRECT_BASE` | Public HTTPS origin, no trailing slash |
 | `BACHS_API_KEY` | Live or sandbox |
 | `BACHS_WEBHOOK_SECRET` | Required in Cloud — webhook `…/webhooks/bachs` |
@@ -53,13 +57,13 @@ Set these in Cloud env (never commit secrets):
 Deploy:
 
 ```bash
-python -m fastapi deploy
+uv run python -m fastapi deploy
 ```
 
 Seed a super admin against production DB only via a one-off with `DATABASE_URL` set:
 
 ```bash
-python -m app.seed --email you@example.com --password '…' --name '…' --role super_admin
+uv run python -m app.seed --email you@example.com --password '…' --name '…' --role super_admin
 ```
 
 Then **Admin → Sync now** once (or wait for the hourly catalogue sync).
@@ -80,3 +84,12 @@ AI needs subscription status `active` / `trialing`. BYOK also needs a saved LLM 
 ### Admin
 
 Catalogue sync is limited to `admin` / `super_admin` roles (`role` column).
+
+### Tests
+
+```bash
+uv sync
+uv run pytest
+```
+
+Critical-path coverage: auth privilege stripping, Bachs webhook HMAC + identity binding, upload magic-byte validation, CV generation fallback, and apply-copy templates.

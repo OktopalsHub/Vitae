@@ -51,6 +51,7 @@ def billing_page(
     billing = get_profile_billing(db, user, profile)
     region, region_source = _sync_region_from_request(request, billing, db)
     return templates.TemplateResponse(
+        request,
         "billing.html",
         template_ctx(
             request,
@@ -171,7 +172,6 @@ async def bachs_webhook(request: Request, db: Session = Depends(get_db)):
         or data.get("customer_id")
         or ""
     )
-    email = (customer.get("email") or "").strip().lower()
 
     user: User | None = None
     if user_id_str:
@@ -179,8 +179,16 @@ async def bachs_webhook(request: Request, db: Session = Depends(get_db)):
             user = db.get(User, uuid.UUID(user_id_str))
         except ValueError:
             user = None
-    if not user and email:
-        user = db.query(User).filter(User.email == email).one_or_none()
+    # Renewals may omit checkout metadata — resolve via stored Bachs customer id.
+    if not user and customer_id:
+        billing_row = (
+            db.query(ProfileBilling)
+            .filter(ProfileBilling.bachs_customer_id == str(customer_id))
+            .one_or_none()
+        )
+        if billing_row is not None:
+            user = db.get(User, billing_row.user_id)
+    # Do not fall back to payer email alone — that can entitle the wrong account.
     if not user:
         return JSONResponse({"ok": True, "ignored": "no user"})
 

@@ -1,0 +1,30 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    env:
+      APP_ENV: test
+      SECRET_KEY: ci-test-secret-key-not-for-production!!
+      FERNET_SECRET_KEY: ci-fernet-secret-key-not-for-prod!!
+      DATABASE_URL: sqlite:///./data/ci.db
+      BACHS_WEBHOOK_SECRET: ci-webhook-secret
+      BACHS_WEBHOOK_DEV_ACCEPT: "0"
+      CATALOGUE_SYNC_DISABLED: "1"
+      USER_RANK_REFRESH_DISABLED: "1"
+      TRUST_EDGE_GEO: "0"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+          enable-cache: true
+      - name: Install dependencies
+        run: uv sync
+      - name: Run tests
+        run: uv run pytest -q

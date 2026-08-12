@@ -56,6 +56,7 @@ def profiles_page(
             }
         )
     return templates.TemplateResponse(
+        request,
         "profiles.html",
         template_ctx(request, user, db, profiles=rows, active_profile=active),
     )
@@ -71,7 +72,7 @@ def profiles_create(
     profile = create_profile(db, user, label, switch_to=True)
     db.commit()
     if profile.profile_confirmed:
-        return flash_redirect("/", f"Switched to “{profile.label}”.")
+        return flash_redirect("/jobs", f"Switched to “{profile.label}”.")
     return flash_redirect(
         "/onboarding",
         f"Created “{profile.label}” — upload a CV and confirm this track. Billing is separate per profile.",
@@ -95,7 +96,7 @@ def profiles_switch(
             "/onboarding",
             f"Switched to “{profile.label}” — finish onboarding for this track.",
         )
-    return flash_redirect("/", f"Switched to “{profile.label}”.")
+    return flash_redirect("/jobs", f"Switched to “{profile.label}”.")
 
 
 @router.post("/profiles/rename")

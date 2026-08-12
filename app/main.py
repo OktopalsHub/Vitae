@@ -5,9 +5,12 @@ from contextlib import asynccontextmanager
 from urllib.parse import quote
 
 from fastapi import FastAPI, Request
-from fastapi.responses import RedirectResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.responses import Response as StarletteResponse
+from starlette.types import Scope
 
 from app.auth import (
     UserCreate,
@@ -21,9 +24,36 @@ from app.auth import (
 from app.config import assert_secure_settings, ensure_dirs, get_settings, project_path
 from app.csrf import CSRFMiddleware, cookie_secure_flag
 from app.db import init_db
+from app.rate_limit import RateLimitExceeded, enforce
 from app.routes import admin, auth_pages, billing, jobs, onboarding, profiles, settings
 from app.scheduler import start_catalogue_sync_task
 from app.web_helpers import LoginRequired, OnboardingRequired, ForbiddenFlash, safe_http_url
+
+
+class CachedStaticFiles(StaticFiles):
+    """Long-cache static assets (pair with ?v= fingerprint in templates)."""
+
+    async def get_response(self, path: str, scope: Scope) -> StarletteResponse:
+        response = await super().get_response(path, scope)
+        if response.status_code == 200:
+            response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+        return response
+
+
+class AuthApiRateLimitMiddleware(BaseHTTPMiddleware):
+    """Rate-limit JSON fastapi-users auth endpoints we do not own as route funcs."""
+
+    async def dispatch(self, request: Request, call_next):
+        path = request.url.path.rstrip("/") or "/"
+        if request.method == "POST" and path in {"/auth/login", "/auth/register"}:
+            try:
+                enforce("auth", request=request, redirect_path="/login")
+            except RateLimitExceeded as exc:
+                return JSONResponse(
+                    {"detail": exc.message},
+                    status_code=429,
+                )
+        return await call_next(request)
 
 
 @asynccontextmanager
@@ -48,7 +78,17 @@ ensure_dirs()
 assert_secure_settings()
 init_db()
 
-app = FastAPI(title="Vitae", lifespan=lifespan)
+_settings = get_settings()
+_prod_like = (_settings.app_env or "").strip().lower() in {"production", "prod", "cloud"}
+
+app = FastAPI(
+    title="Vitae",
+    lifespan=lifespan,
+    docs_url=None if _prod_like else "/docs",
+    redoc_url=None if _prod_like else "/redoc",
+    openapi_url=None if _prod_like else "/openapi.json",
+)
+app.add_middleware(AuthApiRateLimitMiddleware)
 app.add_middleware(CSRFMiddleware)
 templates = Jinja2Templates(directory=str(project_path("app", "templates")))
 templates.env.filters["path_quote"] = lambda value: quote(str(value), safe="")
@@ -56,9 +96,9 @@ templates.env.filters["safe_http_url"] = safe_http_url
 
 static_dir = project_path("app", "static")
 static_dir.mkdir(exist_ok=True)
-app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
+app.mount("/static", CachedStaticFiles(directory=str(static_dir)), name="static")
 
-settings_cfg = get_settings()
+settings_cfg = _settings
 _oauth_cookie_secure = cookie_secure_flag()
 
 app.include_router(
@@ -158,6 +198,17 @@ async def forbidden_flash_handler(request: Request, exc: ForbiddenFlash):
         url=f"{exc.path}?flash={quote(exc.message)}",
         status_code=303,
     )
+
+
+@app.exception_handler(RateLimitExceeded)
+async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
+    accept = (request.headers.get("accept") or "").lower()
+    wants_json = "application/json" in accept or request.url.path.startswith("/auth/")
+    if wants_json:
+        return JSONResponse({"detail": exc.message}, status_code=429)
+    from app.web_helpers import flash_redirect
+
+    return flash_redirect(exc.path, exc.message)
 
 
 @app.get("/health")

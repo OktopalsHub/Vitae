@@ -11,13 +11,23 @@ from app.models import Base
 ensure_dirs()
 
 _DB_URL = database_url()
-_CONNECT_ARGS = {"check_same_thread": False} if _DB_URL.startswith("sqlite") else {}
+_IS_SQLITE = _DB_URL.startswith("sqlite")
+_CONNECT_ARGS = {"check_same_thread": False} if _IS_SQLITE else {}
 
-engine = create_engine(
-    _DB_URL,
-    connect_args=_CONNECT_ARGS,
-    pool_pre_ping=True,
-)
+_engine_kwargs: dict = {
+    "connect_args": _CONNECT_ARGS,
+    "pool_pre_ping": True,
+}
+if not _IS_SQLITE:
+    _engine_kwargs.update(
+        {
+            "pool_size": 5,
+            "max_overflow": 10,
+            "pool_recycle": 1800,
+        }
+    )
+
+engine = create_engine(_DB_URL, **_engine_kwargs)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 
 
@@ -63,14 +73,65 @@ def migrate_schema() -> None:
         "BOOLEAN DEFAULT TRUE" if engine.dialect.name != "sqlite" else "BOOLEAN DEFAULT 1",
     )
     _ensure_column("job_listings", "last_seen_at", "TIMESTAMP")
+    _ensure_column("job_listings", "public_id", "VARCHAR(32) DEFAULT ''")
     _ensure_column("user_jobs", "profile_id", "INTEGER")
     _ensure_column("apply_drafts", "profile_id", "INTEGER")
     _ensure_column("profiles", "archived_at", "TIMESTAMP")
+    _ensure_column("profiles", "free_unlocked_json", "TEXT DEFAULT '[]'")
+    _backfill_listing_public_ids()
     _backfill_user_roles()
     _migrate_profiles_from_legacy()
     _migrate_user_billing_to_profile_billing()
     _migrate_overlay_uniques_to_profile()
+    _ensure_perf_indexes()
 
+
+def _ensure_perf_indexes() -> None:
+    """Composite indexes that help catalogue browse / sync close paths."""
+    statements = [
+        "CREATE INDEX IF NOT EXISTS ix_job_listings_active_visibility "
+        "ON job_listings (is_active, visibility)",
+        "CREATE INDEX IF NOT EXISTS ix_job_listings_scope_active_seen "
+        "ON job_listings (scope_key, is_active, last_seen_at)",
+        "CREATE INDEX IF NOT EXISTS ix_listing_match_scores_profile_fp_score "
+        "ON listing_match_scores (profile_id, fingerprint, match_score)",
+    ]
+    insp = inspect(engine)
+    tables = set(insp.get_table_names())
+    with engine.begin() as conn:
+        for stmt in statements:
+            if "listing_match_scores" in stmt and "listing_match_scores" not in tables:
+                continue
+            if "job_listings" in stmt and "job_listings" not in tables:
+                continue
+            conn.execute(text(stmt))
+
+
+def _backfill_listing_public_ids() -> None:
+    """Assign unguessable public_id tokens to existing catalogue rows."""
+    import secrets
+
+    insp = inspect(engine)
+    if "job_listings" not in insp.get_table_names():
+        return
+    cols = {c["name"] for c in insp.get_columns("job_listings")}
+    if "public_id" not in cols:
+        return
+    with engine.begin() as conn:
+        rows = conn.execute(
+            text(
+                """
+                SELECT id FROM job_listings
+                WHERE public_id IS NULL OR public_id = ''
+                """
+            )
+        ).fetchall()
+        for (listing_id,) in rows:
+            token = secrets.token_urlsafe(16)[:22]
+            conn.execute(
+                text("UPDATE job_listings SET public_id = :pid WHERE id = :id"),
+                {"pid": token, "id": listing_id},
+            )
 
 def _backfill_user_roles() -> None:
     """Normalize roles to basic / admin / super_admin (role is source of truth)."""

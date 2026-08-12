@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 from pathlib import Path
 from typing import Any
@@ -18,6 +19,7 @@ from app.llm import LLMCreds, has_llm, llm_complete
 from app.profile.loader import load_or_build_profile
 
 JobLike = Any
+logger = logging.getLogger(__name__)
 
 
 def _to_ascii(text: str) -> str:
@@ -34,12 +36,24 @@ def _to_ascii(text: str) -> str:
 SYSTEM_PROMPT = """You are an expert resume writer using ASD-STE100 Simplified Technical English.
 Rewrite the candidate's resume for ONE specific job application.
 
-Rules:
-- Use short, active sentences. One idea per bullet.
-- Mirror important job keywords naturally for ATS (do not keyword-stuff).
-- Keep all facts truthful. Do not invent employers, titles, or years.
-- NEVER include GeoIP, PEP, age verification, or KYC compliance bullets unless the job explicitly requires geo-restriction or KYC systems.
-- Prefer Node.js / TypeScript / REST / databases / Docker / cloud evidence from the profile.
+ASD-STE100 voice (required):
+- Short, active sentences. One idea per bullet.
+- Prefer clear verbs: build, design, lead, deliver, fix, reduce, increase, own.
+- Prefer concrete nouns over soft adjectives.
+
+Truth & targeting:
+- Keep all facts truthful. Do not invent employers, titles, years, metrics, or skills.
+- Read the FULL job description. Summary and top bullets must prove fit for THAT role.
+- Mirror important JD keywords/stack naturally for ATS only when supported by the profile.
+- Reorder and select experience/project bullets so the strongest JD matches come first.
+- Omit experience that does not help this application when space is tight.
+- NEVER include GeoIP, PEP, age verification, or KYC compliance bullets unless the job
+  explicitly requires geo-restriction or KYC systems.
+
+Hard bans (unless they appear verbatim in the candidate profile):
+- world-class, world class, best-in-class, cutting-edge, passionate, results-driven,
+  proven track record, seamless, robust solutions, highly motivated, detail-oriented.
+
 - Target a concise one-page resume.
 - Return ONLY valid JSON matching the schema below. No markdown fences.
 
@@ -210,72 +224,39 @@ def _parse_blocks(lines: list[str], role_hints: tuple[str, ...]) -> list[dict[st
 
 
 def _fallback_resume(profile: dict[str, Any], job: JobLike) -> dict[str, Any]:
-    """Rule-based tailor when LLM is unavailable — still usable."""
-    skills = profile.get("skills") or []
+    """Rule-based tailor when LLM is unavailable — only uses profile facts."""
+    raw_skills = profile.get("skills") or []
+    if not isinstance(raw_skills, list):
+        raw_skills = []
+    skills = [str(s).strip() for s in raw_skills if str(s).strip()]
 
     def pick(keys: tuple[str, ...]) -> str:
-        chosen = []
+        chosen: list[str] = []
         for s in skills:
             low = s.lower()
             if any(k in low for k in keys):
-                # Flatten nested "TypeScript (Node.js, NestJS)"
                 parts = re.split(r"[,;/()]| and ", s)
                 chosen.extend(p.strip() for p in parts if p.strip())
-        # Prefer canonical stack for ATS
-        canonical = [
-            "Node.js",
-            "TypeScript",
-            "JavaScript",
-            "NestJS",
-            "Express.js",
-            "Python",
-            "FastAPI",
-            "MySQL",
-            "PostgreSQL",
-            "MongoDB",
-            "Redis",
-            "TypeORM",
-            "Prisma",
-            "Mongoose",
-            "Docker",
-            "AWS",
-            "Git",
-            "CI/CD",
-        ]
-        merged = _dedupe_csv(chosen + [c for c in canonical if any(k in c.lower() for k in keys)])
-        # Keep only items matching keys
-        merged = [m for m in merged if any(k in m.lower() for k in keys)]
-        return ", ".join(merged[:8]) if merged else ""
+        return ", ".join(_dedupe_csv(chosen)[:8])
 
-    skill_groups = [
-        {
-            "label": "Languages & Frameworks",
-            "value": pick(("node", "type", "javascript", "nest", "express", "python", "fast"))
-            or "Node.js, TypeScript, JavaScript, NestJS, Express.js",
-        },
-        {
-            "label": "Databases",
-            "value": pick(("sql", "mongo", "redis", "prisma", "typeorm", "mongoose", "postgres", "mysql"))
-            or "MySQL, PostgreSQL, MongoDB, Redis",
-        },
-        {
-            "label": "DevOps & Tools",
-            "value": pick(("docker", "aws", "git", "ci", "cloud", "digitalocean"))
-            or "Docker, AWS, Git, CI/CD",
-        },
-        {
-            "label": "APIs & Systems",
-            "value": "RESTful APIs, WebSockets, multi-tenant SaaS, microservices",
-        },
-    ]
-    # Ensure JD keywords appear in skills text when relevant
-    jd_kw = _jd_keywords(job)
-    if jd_kw:
-        skill_groups[0]["value"] = ", ".join(
-            _dedupe_csv(skill_groups[0]["value"].split(",") + [k for k in jd_kw if k in (
-                "Node.js", "TypeScript", "JavaScript", "NestJS", "Express", "REST", "API", "JWT"
-            )])
-        )
+    skill_groups = []
+    for label, keys in (
+        ("Languages & Frameworks", ("node", "type", "javascript", "nest", "express", "python", "fast", "java", "go", "rust", "ruby", "php", "c#", ".net")),
+        ("Databases", ("sql", "mongo", "redis", "prisma", "typeorm", "mongoose", "postgres", "mysql", "dynamo", "elastic")),
+        ("DevOps & Tools", ("docker", "aws", "git", "ci", "cloud", "digitalocean", "kubernetes", "terraform", "linux")),
+        ("APIs & Systems", ("api", "rest", "graphql", "websocket", "grpc", "microservice", "saas", "auth", "queue")),
+    ):
+        value = pick(keys)
+        if value:
+            skill_groups.append({"label": label, "value": value})
+    # Any remaining profile skills that did not match a bucket
+    bucketed = set()
+    for g in skill_groups:
+        for part in g["value"].split(","):
+            bucketed.add(part.strip().lower())
+    leftover = [s for s in skills if s.lower() not in bucketed and not any(s.lower() in b for b in bucketed)]
+    if leftover:
+        skill_groups.append({"label": "Skills", "value": ", ".join(leftover[:12])})
 
     keep_chain = _jd_wants_blockchain(job)
     experiences = _parse_blocks(
@@ -288,14 +269,11 @@ def _fallback_resume(profile: dict[str, Any], job: JobLike) -> dict[str, Any]:
             if not keep_chain and _is_blockchain_heavy(b):
                 continue
             bullets.append(_ste100_bullet(b))
-        # Prefer payment/API/docker bullets when JD mentions them
         jd_blob = f"{job.title} {job.description}".lower()
         if "payment" in jd_blob or "fintech" in jd_blob:
             bullets.sort(key=lambda x: 0 if "payment" in x.lower() or "subscription" in x.lower() else 1)
         exp["bullets"] = bullets[:5]
-        # Clean role title: drop trailing junk
         exp["title"] = re.sub(r"\s*\|?\s*$", "", exp.get("title") or "").strip()
-        # Normalize Cashflakes blockchain title for non-web3 jobs
         if not keep_chain and "blockchain" in exp["title"].lower():
             exp["title"] = re.sub(r"/?\s*Blockchain\s*", "", exp["title"], flags=re.I).strip(" -/")
             if "developer" not in exp["title"].lower() and "engineer" not in exp["title"].lower():
@@ -313,41 +291,41 @@ def _fallback_resume(profile: dict[str, Any], job: JobLike) -> dict[str, Any]:
     projects = [p for p in projects if p.get("bullets")][:2]
 
     edu_lines = profile.get("education_raw") or []
-    education = []
-    if edu_lines:
-        school_line = edu_lines[0]
+    education: list[dict[str, str]] = []
+    if isinstance(edu_lines, list) and edu_lines:
+        school_line = str(edu_lines[0] or "").strip()
         school, dates = _split_header(school_line)
-        details = edu_lines[1] if len(edu_lines) > 1 else "Master of Science in Information Technology (MIT)"
+        details = str(edu_lines[1]).strip() if len(edu_lines) > 1 else ""
         if not dates:
             m = re.search(rf"{_MONTH}.+", school_line, re.I)
             if m:
                 dates = m.group(0).strip()
                 school = school_line[: m.start()].strip()
-        education = [{"school": school or "Miva Open University", "dates": dates or "Jan 2026 - Present", "details": details}]
+        if school or details:
+            education = [{"school": school or school_line, "dates": dates or "", "details": details}]
 
-    focus = ", ".join(jd_kw[:5]) if jd_kw else "Node.js and TypeScript"
+    name = str(profile.get("name") or "").strip() or "Candidate"
+    profile_summary = str(profile.get("summary") or "").strip()
     company = job.company or "this team"
-    summary = (
-        f"Backend Engineer with more than 4 years of experience in Node.js and TypeScript. "
-        f"I design, build, and maintain scalable server-side applications and RESTful APIs. "
-        f"I work with {focus}. "
-        f"I optimize services for speed, reliability, and secure production systems for roles like "
-        f"{job.title} at {company}."
-    )
+    title = job.title or "this role"
+    skill_preview = ", ".join(skills[:5])
+    if profile_summary:
+        summary = profile_summary
+        if title or company:
+            summary = f"{summary.rstrip('.')} Seeking the {title} role at {company}."
+    else:
+        parts = [f"{name}."]
+        if skill_preview:
+            parts.append(f"Skills include {skill_preview}.")
+        parts.append(f"Applying for {title} at {company}.")
+        summary = " ".join(parts)
 
     return {
         "summary": summary,
         "skills": skill_groups,
         "experiences": experiences,
         "projects": projects,
-        "education": education
-        or [
-            {
-                "school": "Miva Open University",
-                "dates": "Jan 2026 - Present",
-                "details": "Master of Science in Information Technology (MIT)",
-            }
-        ],
+        "education": education,
     }
 
 
@@ -390,10 +368,11 @@ async def build_tailored_content(
     job: JobLike,
     profile: dict[str, Any] | None = None,
     creds: LLMCreds | None = None,
-) -> dict[str, Any]:
+) -> tuple[dict[str, Any], bool]:
+    """Return (resume_data, used_fallback)."""
     profile = profile or load_or_build_profile()
     if not has_llm(creds):
-        return _post_validate_resume(_fallback_resume(profile, job), job)
+        return _post_validate_resume(_fallback_resume(profile, job), job), True
 
     prompt = f"""Candidate profile JSON:
 {json.dumps({k: profile[k] for k in ('name','contact','summary','skills','experience_raw','projects_raw','education_raw') if k in profile}, indent=2)[:14000]}
@@ -404,9 +383,17 @@ Company: {job.company}
 Location: {job.location}
 URL: {job.url}
 Description:
-{(job.description or '')[:7000]}
+{(job.description or '')[:8000]}
 
-Create a tailored resume JSON for this job.
+Create a tailored resume JSON for THIS job only.
+Requirements:
+1) Summary (3–4 ASD-STE100 sentences): name the role/domain from the JD, then map
+   2–3 JD requirements to real profile strengths. No hype adjectives.
+2) Skills groups: prioritize stacks and tools the JD asks for that exist in the profile.
+   Do not add skills the profile does not support.
+3) Experience bullets: lead with work that matches JD duties/stack; demote or drop
+   weak matches. One idea per bullet. Quantify only when the profile already has the number.
+4) Projects: keep only projects that reinforce JD fit.
 """
     try:
         raw = await _llm_complete(prompt, creds=creds)
@@ -414,9 +401,10 @@ Create a tailored resume JSON for this job.
         # Minimal validation
         if not data.get("summary") or not data.get("experiences"):
             raise ValueError("Incomplete LLM resume")
-        return _post_validate_resume(data, job)
-    except Exception:
-        return _post_validate_resume(_fallback_resume(profile, job), job)
+        return _post_validate_resume(data, job), False
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("LLM CV tailor failed; using rule-based fallback: %s", exc)
+        return _post_validate_resume(_fallback_resume(profile, job), job), True
 
 
 def resume_to_markdown(name: str, contact: str, data: dict[str, Any]) -> str:
@@ -670,11 +658,12 @@ async def generate_resume_files(
     user_id: str | None = None,
     profile_id: int | None = None,
     display_name: str | None = None,
-) -> Path:
+) -> tuple[Path, bool]:
+    """Write PDF/DOCX exports. Returns (output_dir, used_fallback)."""
     profile = profile or load_or_build_profile()
     name = display_name or profile.get("name") or "Candidate"
     contact = profile.get("contact") or ""
-    data = await build_tailored_content(job, profile=profile, creds=creds)
+    data, used_fallback = await build_tailored_content(job, profile=profile, creds=creds)
     out = output_dir_for(job, user_id=user_id, profile_id=profile_id)
 
     # Clear prior exports so only current PDF/DOCX remain listed.
@@ -685,4 +674,4 @@ async def generate_resume_files(
     base = resume_basename(job, display_name=name)
     write_docx(out / f"{base}.docx", name, contact, data)
     write_pdf(out / f"{base}.pdf", name, contact, data)
-    return out
+    return out, used_fallback

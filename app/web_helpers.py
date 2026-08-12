@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 import uuid
 from pathlib import Path
 from urllib.parse import quote, urlparse
@@ -8,7 +9,7 @@ from fastapi import Depends, Request, Response
 from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 
-from app.apply_assist import ensure_apply_copy, load_job_draft, save_job_draft
+from app.apply_assist import ensure_apply_copy
 from app.auth import SESSION_MAX_AGE, get_jwt_strategy, optional_current_user
 from app.csrf import cookie_secure_flag, csrf_token_for_template
 from app.config import api_key_status, get_settings, uses_sqlite
@@ -29,10 +30,14 @@ from app.accounts.profile import (
     list_user_profiles,
 )
 
+# Re-issue JWT at most this often (seconds). Login still writes a fresh cookie.
+_SLIDE_INTERVAL_SECONDS = 6 * 60 * 60
+_SLIDE_MARKER_COOKIE = "vitae_auth_slide"
+
 
 class LoginRequired(Exception):
-    def __init__(self, next_path: str = "/"):
-        self.next_path = next_path or "/"
+    def __init__(self, next_path: str = "/jobs"):
+        self.next_path = next_path or "/jobs"
 
 
 class OnboardingRequired(Exception):
@@ -40,14 +45,14 @@ class OnboardingRequired(Exception):
 
 
 class ForbiddenFlash(Exception):
-    def __init__(self, message: str = "Access denied", path: str = "/"):
+    def __init__(self, message: str = "Access denied", path: str = "/jobs"):
         self.message = message
-        self.path = path or "/"
+        self.path = path or "/jobs"
 
 
-def safe_next_path(raw: str | None, default: str = "/") -> str:
+def safe_next_path(raw: str | None, default: str = "/jobs") -> str:
     """Only allow same-site relative redirects (block open redirects)."""
-    value = (raw or default or "/").strip() or "/"
+    value = (raw or default or "/jobs").strip() or "/jobs"
     if not value.startswith("/") or value.startswith("//"):
         return default
     if "\\" in value or "\n" in value or "\r" in value:
@@ -78,13 +83,30 @@ def redirect_with_auth_cookie(url: str, auth_response) -> RedirectResponse:
     return redirect
 
 
-async def _slide_session_cookie(response: Response, user: User) -> None:
-    """Re-issue JWT cookie so active users stay signed in (sliding ~30 days)."""
+async def _slide_session_cookie(request: Request, response: Response, user: User) -> None:
+    """Re-issue JWT cookie periodically so active users stay signed in."""
+    now = int(time.time())
+    raw = (request.cookies.get(_SLIDE_MARKER_COOKIE) or "").strip()
+    try:
+        last = int(raw) if raw else 0
+    except ValueError:
+        last = 0
+    if last and (now - last) < _SLIDE_INTERVAL_SECONDS:
+        return
     token = await get_jwt_strategy().write_token(user)
     secure = cookie_secure_flag()
     response.set_cookie(
         key="jobmatch_auth",
         value=token,
+        max_age=SESSION_MAX_AGE,
+        httponly=True,
+        samesite="lax",
+        secure=secure,
+        path="/",
+    )
+    response.set_cookie(
+        key=_SLIDE_MARKER_COOKIE,
+        value=str(now),
         max_age=SESSION_MAX_AGE,
         httponly=True,
         samesite="lax",
@@ -103,7 +125,7 @@ async def require_user(
         if request.url.query:
             path = f"{path}?{request.url.query}"
         raise LoginRequired(path)
-    await _slide_session_cookie(response, user)
+    await _slide_session_cookie(request, response, user)
     return user
 
 
@@ -139,30 +161,57 @@ def template_ctx(
     db: Session | None = None,
     **extra,
 ) -> dict:
+    # Allow routes to pass precomputed nav/billing flags to avoid duplicate queries.
+    pre_ai_ok = extra.pop("ai_ok", None)
+    pre_ai_reason = extra.pop("ai_reason", None)
+    pre_full_access = extra.pop("full_access", None)
+    pre_profile_ready = extra.pop("profile_ready", None)
+    pre_active = extra.pop("active_profile", None)
+    pre_nav = extra.pop("nav_profiles", None)
+    pre_billing = extra.pop("billing", None)
+
     ai_ok, ai_reason = (False, "")
-    billing = None
+    billing = pre_billing
     full_access = False
     profile_ready = False
-    active_profile = None
-    nav_profiles: list[dict] = []
+    active_profile = pre_active
+    nav_profiles: list[dict] = list(pre_nav) if pre_nav is not None else []
+
     if user and db is not None:
         ensure_account(db, user)
-        ai_ok, ai_reason = can_use_ai(db, user)
-        active_profile = get_active_profile(db, user)
-        billing = get_profile_billing(db, user, active_profile)
+        if pre_ai_ok is None:
+            ai_ok, ai_reason = can_use_ai(db, user)
+        else:
+            ai_ok, ai_reason = bool(pre_ai_ok), (pre_ai_reason or "")
+        if active_profile is None:
+            active_profile = get_active_profile(db, user)
+        if billing is None:
+            billing = get_profile_billing(db, user, active_profile)
         from app.accounts import has_full_job_access
 
-        full_access = has_full_job_access(db, user)
-        profile_ready = is_profile_confirmed(db, user)
-        nav_profiles = [
-            {
-                "id": p.id,
-                "label": p.label,
-                "active": p.id == active_profile.id,
-                "confirmed": bool(p.profile_confirmed),
-            }
-            for p in list_user_profiles(db, user)
-        ]
+        if pre_full_access is None:
+            full_access = has_full_job_access(db, user)
+        else:
+            full_access = bool(pre_full_access)
+        if pre_profile_ready is None:
+            profile_ready = is_profile_confirmed(db, user)
+        else:
+            profile_ready = bool(pre_profile_ready)
+        if pre_nav is None:
+            nav_profiles = [
+                {
+                    "id": p.id,
+                    "label": p.label,
+                    "active": p.id == active_profile.id,
+                    "confirmed": bool(p.profile_confirmed),
+                }
+                for p in list_user_profiles(db, user)
+            ]
+    elif pre_ai_ok is not None:
+        ai_ok, ai_reason = bool(pre_ai_ok), (pre_ai_reason or "")
+        full_access = bool(pre_full_access) if pre_full_access is not None else False
+        profile_ready = bool(pre_profile_ready) if pre_profile_ready is not None else False
+
     from app.auth import github_oauth_client, google_oauth_client
     from app.roles import is_admin, is_super_admin, user_role
 
@@ -170,7 +219,7 @@ def template_ctx(
         "request": request,
         "user": user,
         "keys": api_key_status(),
-        "flash": request.query_params.get("flash", ""),
+        "flash": request.query_params.get("flash", "") if request is not None else "",
         "uses_sqlite": uses_sqlite(),
         "ai_ok": ai_ok,
         "ai_reason": ai_reason,
@@ -199,12 +248,7 @@ async def ensure_user_apply_copy(
     force_answers: bool = False,
     use_ai: bool = True,
 ):
-    uid = str(user.id)
-    file_draft = load_job_draft(card.id, user_id=uid)
-    if not file_draft:
-        db_draft = load_apply_draft_db(db, user, card.id)
-        if db_draft:
-            save_job_draft(card.id, db_draft, user_id=uid)
+    existing = load_apply_draft_db(db, user, card.id)
     creds = llm_creds_for_user(db, user) if use_ai else None
     if use_ai:
         ok, _ = can_use_ai(db, user)
@@ -216,7 +260,7 @@ async def ensure_user_apply_copy(
         force_cover=force_cover,
         force_answers=force_answers,
         creds=creds,
-        user_id=uid,
+        existing=existing,
     )
     save_apply_draft_db(db, user, card.id, copy)
     return copy
@@ -247,6 +291,21 @@ def validate_upload_filename(filename: str | None) -> str:
     if not (lower.endswith(".pdf") or lower.endswith(".docx")):
         raise ValueError("Upload a PDF or DOCX file")
     return name
+
+
+def validate_upload_content(filename: str, content: bytes) -> None:
+    """Reject files whose magic bytes do not match the declared extension."""
+    lower = Path(filename).name.lower()
+    if lower.endswith(".pdf"):
+        if not content.lstrip().startswith(b"%PDF"):
+            raise ValueError("File content is not a valid PDF")
+        return
+    if lower.endswith(".docx"):
+        # DOCX is a ZIP package (PK\x03\x04 or empty-archive PK\x05\x06).
+        if len(content) < 4 or content[:2] != b"PK":
+            raise ValueError("File content is not a valid DOCX")
+        return
+    raise ValueError("Upload a PDF or DOCX file")
 
 
 def read_upload_limited(content: bytes) -> bytes:
