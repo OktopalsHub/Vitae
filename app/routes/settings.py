@@ -12,7 +12,6 @@ from app.config import get_settings, project_path
 from app.db import get_db
 from app.models import BillingPlan, User
 from app.profile.loader import parse_cv_file
-from app.services import rescore_user_jobs
 from app.accounts import (
     apply_profile_from_user,
     ensure_account,

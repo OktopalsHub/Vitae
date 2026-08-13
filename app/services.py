@@ -9,11 +9,13 @@ from sqlalchemy.orm import Session, load_only, noload
 
 from app.config import get_settings, load_yaml_config
 from app.matching.score_cache import (
+    load_all_scores_for_profile,
     load_scores_for_profile,
     score_fingerprint,
     score_listing_cached,
     upsert_match_score,
 )
+from app.db import SessionLocal
 from app.matching.scorer import reasons_to_json, score_job
 from app.models import (
     JobCard,
@@ -305,6 +307,26 @@ def list_job_cards(
         )
         .all()
     )
+    # Fully cold fingerprint: score once with a single existing-row lookup (not N SELECTs).
+    existing_rows: dict[int, ListingMatchScore] | None = None
+    if listings and not score_map:
+        existing_rows = load_all_scores_for_profile(db, active.id)
+        for i, listing in enumerate(listings, start=1):
+            score, reasons = score_listing_cached(listing, profile, cfg)
+            row = upsert_match_score(
+                db,
+                profile_id=active.id,
+                listing_id=listing.id,
+                match_score=score,
+                match_reasons=reasons,
+                fingerprint=fingerprint,
+                existing=existing_rows.get(listing.id),
+            )
+            score_map[listing.id] = row
+            if i % 200 == 0:
+                db.flush()
+        db.flush()
+
     overlays = {
         uj.listing_id: uj
         for uj in db.query(UserJob)
@@ -328,7 +350,6 @@ def list_job_cards(
 
     qn = q.lower().strip()
     cards: list[JobCard] = []
-    scored_misses = 0
     for listing in listings:
         ensure_listing_public_id(listing)
         if source and listing.source.lower() != source.lower():
@@ -344,6 +365,8 @@ def list_job_cards(
             score = float(cached.match_score or 0)
             reasons = cached.match_reasons or ""
         else:
+            if existing_rows is None:
+                existing_rows = load_all_scores_for_profile(db, active.id)
             score, reasons = score_listing_cached(listing, profile, cfg)
             upsert_match_score(
                 db,
@@ -352,8 +375,8 @@ def list_job_cards(
                 match_score=score,
                 match_reasons=reasons,
                 fingerprint=fingerprint,
+                existing=existing_rows.get(listing.id),
             )
-            scored_misses += 1
 
         if score < min_score:
             continue
@@ -372,10 +395,7 @@ def list_job_cards(
         )
 
     cards.sort(key=lambda c: (-c.match_score, c.title.lower()))
-    if scored_misses:
-        db.flush()
-    else:
-        db.flush()  # persist any newly assigned public_id tokens
+    db.flush()  # persist score fills + any newly assigned public_id tokens
     return cards
 
 
@@ -386,7 +406,18 @@ def refresh_profile_match_scores(db: Session, user: User) -> int:
     profile = load_user_profile_dict(db, user)
     cfg = load_user_settings(db, user)
     fingerprint = score_fingerprint(profile, cfg)
-    listings = visible_listings_query(db, user).all()
+    listings = visible_listings_query(db, user).options(
+        load_only(
+            JobListing.id,
+            JobListing.title,
+            JobListing.company,
+            JobListing.location,
+            JobListing.url,
+            JobListing.description,
+            JobListing.salary,
+        )
+    ).all()
+    existing = load_all_scores_for_profile(db, active.id)
     n = 0
     for listing in listings:
         score, reasons = score_listing_cached(listing, profile, cfg)
@@ -397,8 +428,11 @@ def refresh_profile_match_scores(db: Session, user: User) -> int:
             match_score=score,
             match_reasons=reasons,
             fingerprint=fingerprint,
+            existing=existing.get(listing.id),
         )
         n += 1
+        if n % 200 == 0:
+            db.flush()
     db.flush()
     return n
 
@@ -411,16 +445,37 @@ def rescore_user_jobs(db: Session, user: User) -> int:
     n = refresh_profile_match_scores(db, user)
     rows = (
         db.query(UserJob)
+        .options(noload(UserJob.listing))
         .filter(UserJob.user_id == user.id)
         .all()
     )
+    listing_ids = [o.listing_id for o in rows if o.listing_id]
+    listings_by_id = {
+        L.id: L
+        for L in db.query(JobListing).filter(JobListing.id.in_(listing_ids)).all()
+    } if listing_ids else {}
     for overlay in rows:
-        listing = overlay.listing or db.get(JobListing, overlay.listing_id)
+        listing = listings_by_id.get(overlay.listing_id)
         if listing is None:
             continue
         refresh_overlay_score(db, user, listing, overlay, profile, cfg)
     db.commit()
     return n
+
+
+def rescore_user_jobs_background(user_id: Any) -> None:
+    """Own-session wrapper for FastAPI BackgroundTasks (do not block the request)."""
+    db = SessionLocal()
+    try:
+        user = db.get(User, user_id)
+        if user is None:
+            return
+        rescore_user_jobs(db, user)
+    except Exception:  # noqa: BLE001 — background must not crash the worker
+        db.rollback()
+        raise
+    finally:
+        db.close()
 
 
 def top_clear_listing_ids(

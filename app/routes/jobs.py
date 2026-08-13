@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from math import ceil
 from pathlib import Path
 from urllib.parse import quote, urlencode
@@ -32,6 +33,7 @@ from app.accounts import (
     free_unlocked_listing_ids,
     get_active_profile,
     has_full_job_access,
+    listing_board_is_clear,
     listing_is_free_openable,
     llm_creds_for_user,
     load_apply_draft_db,
@@ -59,6 +61,15 @@ templates.env.filters["path_quote"] = lambda value: quote(str(value), safe="")
 templates.env.filters["match_reasons"] = reasons_from_json
 
 JOBS_PAGE_SIZE = 20
+_SAFE_JOBS_QS = re.compile(r"^[A-Za-z0-9._=&%+\-]*$")
+
+
+def _jobs_list_path(from_qs: str = "") -> str:
+    """Same-tab return to the filtered jobs board (no open redirects)."""
+    qs = (from_qs or "").lstrip("?")
+    if not qs or qs.startswith("/") or not _SAFE_JOBS_QS.match(qs):
+        return "/jobs"
+    return f"/jobs?{qs}"
 
 
 def _jobs_query_string(*, status: str, min_score: float, q: str, page: int | None = None) -> str:
@@ -159,10 +170,8 @@ def jobs_board(
     job_rows = [
         {
             "card": card,
-            "blurred": not (
-                full_access
-                or listing_is_free_openable(db, user, int(card.id))
-            ),
+            # Unopened free rows stay blurred; opens are claimed on detail view.
+            "blurred": not (full_access or listing_board_is_clear(db, user, int(card.id))),
             "openable": full_access
             or listing_is_free_openable(db, user, int(card.id)),
             "unlocked": full_access or int(card.id) in unlocked_ids,
@@ -194,7 +203,7 @@ def jobs_board(
     locked_count = (
         0
         if full_access
-        else sum(1 for c in matched if not listing_is_free_openable(db, user, int(c.id)))
+        else sum(1 for c in matched if not listing_board_is_clear(db, user, int(c.id)))
     )
     free_used = 0 if full_access else len(unlocked_ids)
 
@@ -243,6 +252,7 @@ async def job_detail(
     request: Request,
     db: Session = Depends(get_db),
     user: User = Depends(require_profile_ready),
+    from_qs: str = Query("", alias="from"),
 ):
     try:
         card = _require_listing_access(db, user, job_ref)
@@ -278,6 +288,8 @@ async def job_detail(
             cover_blurb=copy["cover_blurb"],
             app_answers=copy["answers"],
             apply_url=safe_http_url(card.url),
+            jobs_from=from_qs,
+            jobs_back=_jobs_list_path(from_qs),
         ),
     )
 
@@ -417,6 +429,7 @@ async def generate_cv(
 def set_status(
     job_ref: str,
     status: str = Form(...),
+    from_qs: str = Form("", alias="from"),
     db: Session = Depends(get_db),
     user: User = Depends(require_profile_ready),
 ):
@@ -431,6 +444,8 @@ def set_status(
         raise HTTPException(400, "Invalid status")
     card.user_job.status = status
     db.commit()
+    if status in {JobStatus.APPLIED.value, JobStatus.SKIPPED.value}:
+        return flash_redirect(_jobs_list_path(from_qs), "Status updated")
     return flash_redirect(f"/jobs/{job_ref}", "Status updated")
 
 

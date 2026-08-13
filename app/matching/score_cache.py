@@ -60,15 +60,18 @@ def upsert_match_score(
     match_score: float,
     match_reasons: str,
     fingerprint: str,
+    existing: ListingMatchScore | None = None,
 ) -> ListingMatchScore:
-    row = (
-        db.query(ListingMatchScore)
-        .filter(
-            ListingMatchScore.profile_id == profile_id,
-            ListingMatchScore.listing_id == listing_id,
+    row = existing
+    if row is None:
+        row = (
+            db.query(ListingMatchScore)
+            .filter(
+                ListingMatchScore.profile_id == profile_id,
+                ListingMatchScore.listing_id == listing_id,
+            )
+            .one_or_none()
         )
-        .one_or_none()
-    )
     now = datetime.utcnow()
     if row is None:
         row = ListingMatchScore(
@@ -87,6 +90,16 @@ def upsert_match_score(
         row.scored_at = now
         db.add(row)
     return row
+
+
+def load_all_scores_for_profile(db: Session, profile_id: int) -> dict[int, ListingMatchScore]:
+    """All score rows for a profile (any fingerprint) — for bulk refresh."""
+    rows = (
+        db.query(ListingMatchScore)
+        .filter(ListingMatchScore.profile_id == profile_id)
+        .all()
+    )
+    return {r.listing_id: r for r in rows}
 
 
 def load_scores_for_profile(

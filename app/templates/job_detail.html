@@ -3,7 +3,7 @@
 {% block content %}
 <div class="page-head detail-hero" style="max-width:none">
   <div class="actions" style="justify-content:space-between; margin-bottom:var(--s4)">
-    <a class="btn" href="/jobs">← Back to jobs</a>
+    <a class="btn" href="{{ jobs_back or '/jobs' }}">← Back to jobs</a>
     <div class="actions">
       {% if apply_url %}
       <a class="btn" href="{{ apply_url }}" target="_blank" rel="noopener">Open apply page</a>
@@ -16,19 +16,21 @@
 
   <h1>{{ job.title }}</h1>
   <p class="detail-meta">
-    <span>{{ job.company or "Unknown company" }}</span><span class="dot">·</span>
-    <span>{{ job.location or "N/A" }}</span><span class="dot">·</span>
+    {% if job.company %}<span>{{ job.company }}</span><span class="dot">·</span>{% endif %}
+    {% if job.location %}<span>{{ job.location }}</span><span class="dot">·</span>{% endif %}
     <span class="score">{{ '%.0f'|format(job.match_score) }}% match</span><span class="dot">·</span>
-    <span class="badge {{ job.status }}">{{ job.status }}</span>
+    <span class="badge {{ job.status }}">{{ job.status.replace('_', ' ') }}</span>
   </p>
 
   <div class="actions">
     <form action="/jobs/{{ job.public_id }}/status" method="post">
       <input type="hidden" name="status" value="applied" />
+      {% if jobs_from %}<input type="hidden" name="from" value="{{ jobs_from }}" />{% endif %}
       <button class="btn btn-ok" type="submit">Mark applied</button>
     </form>
     <form action="/jobs/{{ job.public_id }}/status" method="post">
       <input type="hidden" name="status" value="skipped" />
+      {% if jobs_from %}<input type="hidden" name="from" value="{{ jobs_from }}" />{% endif %}
       <button class="btn btn-danger" type="submit">Skip</button>
     </form>
     <form
@@ -37,6 +39,7 @@
       onsubmit="return confirm('Move this job back to New?\n\nThis only changes status (for example from applied/skipped). It does not delete your tailored CV or Apply Assist drafts.');"
     >
       <input type="hidden" name="status" value="new" />
+      {% if jobs_from %}<input type="hidden" name="from" value="{{ jobs_from }}" />{% endif %}
       <button class="btn" type="submit">Move back to New</button>
     </form>
   </div>
@@ -196,6 +199,7 @@
 
     <form action="/jobs/{{ job.public_id }}/status" method="post" style="margin-top:var(--s3)">
       <input type="hidden" name="status" value="applied" />
+      {% if jobs_from %}<input type="hidden" name="from" value="{{ jobs_from }}" />{% endif %}
       <button class="btn btn-ok" type="submit">I submitted — mark applied</button>
     </form>
 

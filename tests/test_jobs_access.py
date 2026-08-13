@@ -58,6 +58,20 @@ def test_numeric_job_id_is_not_found(confirmed_user, client):
     assert b"Backend Engineer" in r.content
 
 
+def test_profiles_page_lets_you_create_and_switch(confirmed_user, client):
+    r = client.get("/profiles")
+    assert r.status_code == 200
+    assert b"Create profile" in r.content
+    assert b'action="/profiles/create"' in r.content
+    assert b">Profiles<" in r.content
+
+
+def test_jobs_board_opens_in_same_tab(confirmed_user, client):
+    r = client.get("/jobs")
+    assert r.status_code == 200
+    assert b'target="_blank"' not in r.content
+
+
 def test_landing_shows_free_listings(client):
     r = client.get("/")
     assert r.status_code == 200
@@ -73,6 +87,9 @@ def test_public_company_name_hides_job_sites():
     assert public_company_name("Wellfound startup") == ""
     assert public_company_name("ZipRecruiter") == ""
     assert public_company_name("remotive", "remotive") == ""
+    assert public_company_name("Ashby") == ""
+    assert public_company_name("BruntWork") == ""
+    assert public_company_name("BruntWork", "bruntwork") == ""
     assert public_company_name("Acme Labs", "remoteok") == "Acme Labs"
 
 
@@ -125,6 +142,51 @@ def test_free_openings_are_one_time_per_profile(confirmed_user):
         ok, _ = can_open_listing(db, user, listings[0].id)
         assert ok
         assert free_unlocked_listing_ids(db, user) == unlocked
+    finally:
+        db.close()
+
+
+def test_free_board_blurs_until_opened(confirmed_user):
+    from app.accounts.billing_access import (
+        can_open_listing,
+        listing_board_is_clear,
+        listing_is_free_openable,
+        FREE_CLEAR_MATCHES,
+    )
+
+    db = SessionLocal()
+    try:
+        user = confirmed_user["user"]
+        listings = []
+        for i in range(FREE_CLEAR_MATCHES + 2):
+            listing = JobListing(
+                public_id=new_listing_public_id(),
+                source="paste",
+                external_id=f"blur-board-{i}",
+                title=f"Blur Role {i}",
+                company="Acme",
+                location="Remote",
+                url=f"https://example.com/blur-{i}",
+                description="Build APIs with TypeScript",
+                visibility=ListingVisibility.PUBLIC.value,
+                scope_key="public",
+                is_active=True,
+            )
+            db.add(listing)
+            listings.append(listing)
+        db.commit()
+        for listing in listings:
+            db.refresh(listing)
+
+        # Before any open: board is blurred, but still openable while free opens remain.
+        assert not listing_board_is_clear(db, user, listings[0].id)
+        assert listing_is_free_openable(db, user, listings[0].id)
+
+        ok, _ = can_open_listing(db, user, listings[0].id)
+        assert ok
+        db.commit()
+        assert listing_board_is_clear(db, user, listings[0].id)
+        assert not listing_board_is_clear(db, user, listings[1].id)
     finally:
         db.close()
 

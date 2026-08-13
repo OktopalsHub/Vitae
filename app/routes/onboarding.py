@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 
-from fastapi import APIRouter, Depends, File, Form, Request, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
@@ -11,7 +11,7 @@ from app.config import project_path
 from app.db import get_db
 from app.models import User
 from app.profile.loader import contact_parts_from_profile, parse_cv_file
-from app.services import rescore_user_jobs
+from app.services import rescore_user_jobs_background
 from app.accounts import (
     ensure_account,
     get_active_profile,
@@ -178,6 +178,7 @@ def onboarding_review(
 @router.post("/onboarding/review/{section}")
 async def onboarding_review_save(
     section: str,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     user: User = Depends(require_user),
     # basics
@@ -241,7 +242,8 @@ async def onboarding_review_save(
         up.profile_confirmed = True
         db.add(up)
         db.commit()
-        rescore_user_jobs(db, user)
+        # Full catalogue rescore is too slow for the request (Neon round-trips).
+        background_tasks.add_task(rescore_user_jobs_background, user.id)
         return flash_redirect(
             "/billing",
             "Profile saved. Choose an AI plan, or skip to continue to jobs.",

@@ -6,6 +6,21 @@ from app.config import get_settings
 from app.crypto import decrypt_secret
 from app.llm_providers import PLATFORM_PROVIDERS, ProviderSpec, get_provider
 
+# Gemini 2.0 Flash shut down 2026-06-01. Remap so stale .env / Cloud vars still work.
+_RETIRED_GEMINI_MODELS = {
+    "gemini-2.0-flash": "gemini-2.5-flash",
+    "gemini-2.0-flash-001": "gemini-2.5-flash",
+    "gemini-2.0-flash-exp": "gemini-2.5-flash",
+    "gemini-2.0-flash-lite": "gemini-2.5-flash-lite",
+    "gemini-2.0-flash-lite-001": "gemini-2.5-flash-lite",
+}
+
+
+def resolve_gemini_model(model: str) -> str:
+    raw = (model or "").strip()
+    key = raw.lower().removeprefix("models/")
+    return _RETIRED_GEMINI_MODELS.get(key) or raw or "gemini-2.5-flash"
+
 
 @dataclass
 class LLMCreds:
@@ -31,8 +46,10 @@ class LLMCreds:
             self.openai_model = self.model
         if self.kind == "anthropic" and not self.anthropic_model:
             self.anthropic_model = self.model
-        if self.kind == "gemini" and not self.gemini_model:
-            self.gemini_model = self.model
+        if self.kind == "gemini":
+            resolved = resolve_gemini_model(self.model or self.gemini_model)
+            self.model = resolved
+            self.gemini_model = resolved
 
 
 def _settings_key(spec: ProviderSpec) -> str:
@@ -44,12 +61,15 @@ def _settings_key(spec: ProviderSpec) -> str:
 
 def _model_for_spec(spec: ProviderSpec) -> str:
     """Platform OpenAI/Gemini can override model via .env; BYOK uses registry defaults."""
+    model = spec.default_model
     if spec.env_model_attr:
         s = get_settings()
         override = (getattr(s, spec.env_model_attr, "") or "").strip()
         if override:
-            return override
-    return spec.default_model
+            model = override
+    if spec.kind == "gemini":
+        return resolve_gemini_model(model)
+    return model
 
 
 def _creds_from_spec(spec: ProviderSpec, api_key: str) -> LLMCreds:
@@ -196,7 +216,7 @@ async def _gemini(
         config_kwargs["response_mime_type"] = "application/json"
 
     resp = await client.aio.models.generate_content(
-        model=c.model or c.gemini_model,
+        model=resolve_gemini_model(c.model or c.gemini_model),
         contents=prompt,
         config=types.GenerateContentConfig(**config_kwargs),
     )

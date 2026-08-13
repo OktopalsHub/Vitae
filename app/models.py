@@ -324,6 +324,9 @@ _PLATFORM_COMPANY_PLACEHOLDERS = frozenset(
         "jooble",
         "greenhouse",
         "lever",
+        "ashby",
+        "bruntwork",
+        "brunt work",
         "djinni",
         "wellfound",
         "weworkremotely",
@@ -342,6 +345,9 @@ _PLATFORM_COMPANY_PLACEHOLDERS = frozenset(
 )
 
 _PLATFORM_SUFFIXES = (" listing", " startup", " jobs", " careers", " board")
+_PLATFORM_COMPACT = frozenset(
+    p.replace(" ", "").replace("-", "") for p in _PLATFORM_COMPANY_PLACEHOLDERS
+)
 
 
 def public_company_name(company: str | None, source: str | None = None) -> str:
@@ -350,21 +356,22 @@ def public_company_name(company: str | None, source: str | None = None) -> str:
     if not raw:
         return ""
     key = " ".join(raw.lower().split())
-    if key in _PLATFORM_COMPANY_PLACEHOLDERS:
+    key_compact = key.replace(" ", "").replace("-", "")
+    if key in _PLATFORM_COMPANY_PLACEHOLDERS or key_compact in _PLATFORM_COMPACT:
         return ""
     for suffix in _PLATFORM_SUFFIXES:
         if key.endswith(suffix):
             stem = key[: -len(suffix)].strip()
-            if stem in _PLATFORM_COMPANY_PLACEHOLDERS:
+            stem_compact = stem.replace(" ", "").replace("-", "")
+            if stem in _PLATFORM_COMPANY_PLACEHOLDERS or stem_compact in _PLATFORM_COMPACT:
                 return ""
     src = (source or "").strip().lower()
     src_base = src.split(":", 1)[0] if src else ""
+    src_compact = src_base.replace(" ", "").replace("-", "")
     if src and key == src:
         return ""
     if src_base and key == src_base:
         return ""
-    if src_base and src_base in _PLATFORM_COMPANY_PLACEHOLDERS and key.replace("-", "") == src_base.replace(
-        "-", ""
-    ):
+    if src_compact and key_compact == src_compact:
         return ""
     return raw

@@ -141,12 +141,12 @@ def has_ng_products() -> bool:
 def checkout_note_for(region: str) -> str:
     if region == "ng":
         if has_ng_products():
-            return "Nigeria pricing · ₦2,000 / ₦5,000 per month via Bachs. Cancel anytime."
+            return ""
         return (
             "Set BACHS_PRODUCT_BYOK_NG and BACHS_PRODUCT_PLATFORM_NG "
-            "(₦2,000 / ₦5,000 NGN products) to enable Nigeria checkout."
+            "to enable Nigeria checkout."
         )
-    return "International pricing · $5 / $10 per month · billed in USD via Bachs."
+    return ""
 
 
 def display_price(plan: str, region: str) -> str:

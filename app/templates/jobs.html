@@ -15,6 +15,7 @@
       <p class="lede">
         Scored ≥{{ '%.0f'|format(min_score) }}% against
         {{ active_profile.label if active_profile else "your CV" }}.
+        <a href="/profiles">Switch or add a profile</a>
       </p>
     </div>
     <div class="page-actions">
@@ -35,7 +36,7 @@
     <div class="jobs-unlock__copy">
       {% if free_remaining %}
       <p class="jobs-unlock__title">{{ free_remaining }} free opening{% if free_remaining != 1 %}s{% endif %} left</p>
-      <p class="meta">Your first {{ free_clear }} listings are free. Open any match; subscribe after that.</p>
+      <p class="meta">Locked rows still count — open any match to unlock it.</p>
       {% else %}
       <p class="jobs-unlock__title">Free openings used · {{ locked_count }} locked</p>
       <p class="meta">Subscribe to open every fit and unlock AI tailored CVs.</p>
@@ -78,9 +79,9 @@
     {% set job = row.card %}
     <li class="job-row {% if row.blurred %}is-blurred{% elif row.unlocked and not full_access %}is-unlocked{% endif %}">
       {% if row.openable %}
-      <a class="job-row__link" href="/jobs/{{ job.public_id }}" target="_blank" rel="noopener">
+      <a class="job-row__link" href="/jobs/{{ job.public_id }}{% if pager.base_qs %}?from={{ pager.base_qs|urlencode }}{% endif %}">
       {% else %}
-      <a class="job-row__link" href="/billing?flash=You%27ve%20used%20your%20free%20openings.%20Subscribe%20to%20unlock%20more%20roles." target="_blank" rel="noopener">
+      <a class="job-row__link" href="/billing?flash=You%27ve%20used%20your%20free%20openings.%20Subscribe%20to%20unlock%20more%20roles.">
       {% endif %}
         {% if row.blurred %}
         <span class="job-row__score" aria-label="Locked match"><span class="ring is-low"><span class="ring__label">··</span></span></span>
@@ -92,7 +93,7 @@
           <span class="job-row__title">{% if row.blurred %}Locked role{% else %}{{ job.title }}{% endif %}</span>
           <span class="job-row__meta">
             {% if row.blurred %}
-              Subscribe to view company &amp; location
+              {% if free_remaining %}Open to unlock this match{% else %}Subscribe to view company &amp; location{% endif %}
             {% else %}
               {% if job.company %}{{ job.company }}{% else %}Company TBA{% endif %}
               {% if job.location %}<span class="dot">·</span>{{ job.location }}{% endif %}

@@ -118,8 +118,8 @@ def claim_free_listing_open(db: Session, user: User, listing_id: int) -> bool:
     return True
 
 
-def listing_is_free_openable(db: Session, user: User, listing_id: int) -> bool:
-    """Board gate: own pastes, already unlocked, or free opens remain (claim on open)."""
+def listing_board_is_clear(db: Session, user: User, listing_id: int) -> bool:
+    """Show title/company on the board (unlocked or own paste only — not 'opens remain')."""
     listing = db.get(JobListing, listing_id)
     if listing is None:
         return False
@@ -128,9 +128,17 @@ def listing_is_free_openable(db: Session, user: User, listing_id: int) -> bool:
         and listing.owner_user_id == user.id
     ):
         return True
-    unlocked = free_unlocked_listing_ids(db, user)
-    if listing_id in unlocked:
+    return listing_id in free_unlocked_listing_ids(db, user)
+
+
+def listing_is_free_openable(db: Session, user: User, listing_id: int) -> bool:
+    """May open detail: clear rows, or any public listing while free opens remain."""
+    if listing_board_is_clear(db, user, listing_id):
         return True
+    listing = db.get(JobListing, listing_id)
+    if listing is None:
+        return False
+    unlocked = free_unlocked_listing_ids(db, user)
     return len(unlocked) < FREE_CLEAR_MATCHES
 
 

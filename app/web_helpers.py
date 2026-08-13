@@ -72,7 +72,8 @@ def safe_http_url(url: str | None) -> str:
 
 
 def flash_redirect(path: str, message: str) -> RedirectResponse:
-    return RedirectResponse(url=f"{path}?flash={quote(message)}", status_code=303)
+    sep = "&" if "?" in path else "?"
+    return RedirectResponse(url=f"{path}{sep}flash={quote(message)}", status_code=303)
 
 
 def redirect_with_auth_cookie(url: str, auth_response) -> RedirectResponse:
