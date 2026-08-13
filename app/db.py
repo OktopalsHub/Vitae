@@ -224,9 +224,13 @@ def _migrate_profiles_from_legacy() -> None:
 
     with engine.begin() as conn:
         if "user_profiles" in tables:
+            # Postgres: boolean COALESCE needs false, not 0 (SQLite accepts either).
+            confirmed_default = (
+                "false" if engine.dialect.name != "sqlite" else "0"
+            )
             conn.execute(
                 text(
-                    """
+                    f"""
                     INSERT INTO profiles (
                         user_id, label, full_name, email, phone, linkedin, github, website,
                         location_preference, years_experience, work_authorization,
@@ -239,7 +243,7 @@ def _migrate_profiles_from_legacy() -> None:
                         up.github, up.website, up.location_preference, up.years_experience,
                         up.work_authorization, up.salary_expectation, up.earliest_start,
                         up.note, up.master_cv_path, up.profile_json, up.career_facts_json,
-                        COALESCE(up.profile_confirmed, 0),
+                        COALESCE(up.profile_confirmed, {confirmed_default}),
                         CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
                     FROM user_profiles up
                     WHERE NOT EXISTS (
