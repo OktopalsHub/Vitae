@@ -10,9 +10,9 @@
 <div class="panel">
   <h3 class="rule-title" style="margin-top:0">Plan</h3>
   {% if staff_billing_exempt %}
-  <p class="meta" style="margin:0">Staff access — full catalogue and AI unlocked (no payment required). Billing plan on file for this profile: <strong>{{ plan }}</strong> · <a href="/profiles">Manage profiles</a></p>
+  <p class="meta" style="margin:0">Staff access — full catalogue and AI unlocked (no payment required). Billing plan on file for this profile: <strong>{{ plan }}</strong> · <a href="/profiles">Profiles</a></p>
   {% else %}
-  <p class="meta" style="margin:0">Profile <strong>{{ profile_label }}</strong> · plan <strong>{{ plan }}</strong> · <a href="/billing">Manage billing</a> · <a href="/profiles">Switch profile</a></p>
+  <p class="meta" style="margin:0">Profile <strong>{{ profile_label }}</strong> · plan <strong>{{ plan }}</strong> · <a href="/billing">Billing</a> · <a href="/profiles">Create or switch profiles</a></p>
   {% endif %}
 
   {% if can_edit_llm_key %}

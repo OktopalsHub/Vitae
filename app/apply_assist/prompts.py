@@ -49,25 +49,29 @@ def _wrap_jd(description: str, max_chars: int = 8000) -> str:
 
 APPLY_WRITING_SYSTEM = f"""{_PROMPT_INJECTION_GUARD}
 
-You write job-application copy in ASD-STE100 Simplified Technical English.
+You write application copy the way a senior hiring manager actually reads it:
+calm, specific, and human. You sound like a strong senior IC — not a recruiter,
+not a keyword bot, and not a cover-letter mill.
 
-ASD-STE100 voice (required):
-- Short, active sentences. Prefer one idea per sentence.
-- Use approved-style clear verbs: build, design, lead, deliver, fix, reduce, increase, own.
-- Prefer concrete nouns (system, API, latency, users, revenue, team) over soft adjectives.
-- Avoid nested clauses and filler transitions.
+Voice:
+- First person. Professional prose, not slogans or telegram-style STE sentences.
+- Short paragraphs. Vary sentence openings. Never start every answer the same way.
+- Prefer one concrete example over a shopping list of technologies.
+- Name the company and role once; do not repeat them in every sentence.
+- Stack appears only inside a real claim ("I shipped billing APIs in TypeScript"),
+  never as "the JD focuses on X, Y, Z".
 
-Hard bans (never write these unless they appear verbatim in the candidate profile):
-- world-class, world class, best-in-class, cutting-edge, passionate, results-driven,
-  synergistic, leverage (as fluff), leverage my skills, proven track record,
-  seamless, robust solutions, dynamic individual, go-getter, thrives in,
-  excited to leverage, highly motivated, detail-oriented team player.
+What hiring managers reject (never write):
+- "I want the [role] at [company] because the JD focuses on …"
+- "That matches work I already do."
+- "I can contribute quickly and own features from design to production."
+- "This work maps to [keyword list] needed for this role."
+- Passion filler, hype adjectives, or copy that still works after swapping the company name.
+- Inventing employers, titles, metrics, products, or skills.
 
-Targeting rules (required — generic copy fails):
-- Every long answer must map 2–4 concrete needs from THIS job description to real profile facts.
-- Name technologies, products, domains, or outcomes from the JD when the profile supports them.
-- If the profile lacks evidence for a JD need, skip that need — do not invent or stretch.
-- Never invent employers, titles, metrics, or skills.
+Targeting:
+- Infer what this team needs (problem, product, users, stage) from the JD.
+- Connect that to one or two real profile facts. If evidence is thin, stay narrow.
 - Do not say "tailored resume" or "customized resume"; say "my resume" if needed.
 """
 
@@ -158,6 +162,33 @@ def _skills_csv(apply_profile: dict[str, Any], limit: int = 12) -> str:
     return ""
 
 
+def _work_shape_phrase(job: JobLike) -> str:
+    """Natural phrase for the work, not a JD keyword dump."""
+    hits = _jd_theme_hits(job, 3)
+    if not hits:
+        return "production backend systems"
+    if len(hits) == 1:
+        return hits[0]
+    if len(hits) == 2:
+        return f"{hits[0]} and {hits[1]}"
+    return f"{hits[0]}, {hits[1]}, and {hits[2]}"
+
+
+def _first_evidence(apply_profile: dict[str, Any]) -> str:
+    facts = _career_facts(apply_profile)
+    if facts:
+        text = facts[0]
+        return text if text.endswith((".", "!", "?")) else f"{text}."
+    highlights = _experience_highlights(apply_profile)
+    if highlights:
+        text = highlights[0]
+        return text if text.endswith((".", "!", "?")) else f"{text}."
+    summary = (apply_profile.get("summary") or "").strip()
+    if summary:
+        return summary if summary.endswith((".", "!", "?")) else f"{summary}."
+    return ""
+
+
 def _career_context_blob(apply_profile: dict[str, Any]) -> str:
     facts = _career_facts(apply_profile)
     highlights = _experience_highlights(apply_profile)
@@ -185,37 +216,25 @@ def _strip_timeline_labels(text: str) -> str:
 
 def template_about_yourself(job: JobLike, apply_profile: dict[str, Any]) -> str:
     name = _candidate_name(apply_profile)
-    company = job.company or "your team"
+    company = job.company or "this team"
     title = job.title or "this role"
     years = (apply_profile.get("years_experience") or "").strip()
-    years_bit = f"Over {years} years, " if years else ""
-    facts = _career_facts(apply_profile)[:3]
-    highlights = _experience_highlights(apply_profile)[:4]
-    skills = _skills_csv(apply_profile, 8)
-    body_parts: list[str] = [f"I am {name}."]
-    if facts:
-        joined = " ".join(facts)
-        if not joined.endswith((".", "!", "?")):
-            joined += "."
-        body_parts.append(joined)
-    elif highlights:
-        body_parts.append("Recent experience includes: " + "; ".join(highlights) + ".")
-    elif apply_profile.get("summary"):
-        body_parts.append(str(apply_profile["summary"]).strip())
-    themes = _jd_theme_hits(job, 4)
-    theme_bit = (
-        f" This work maps to {', '.join(themes)} needed for this role." if themes else ""
+    years_bit = f" a backend engineer with {years} years in production systems." if years else "."
+    evidence = _first_evidence(apply_profile)
+    extra_facts = _career_facts(apply_profile)[1:2]
+    extra = ""
+    if extra_facts:
+        bit = extra_facts[0]
+        extra = " " + (bit if bit.endswith((".", "!", "?")) else f"{bit}.")
+    shape = _work_shape_phrase(job)
+    lead = f"I'm {name},{years_bit}" if years else f"I'm {name}."
+    mid = f" {evidence}{extra}" if evidence else extra
+    close = (
+        f" I'm applying to {company} as {title} because the work is {shape} — "
+        f"designing the interface, shipping it, and staying accountable after release. "
+        f"I'm glad to walk through examples rather than recap my resume here."
     )
-    skills_bit = f" Core skills include {skills}." if skills else ""
-    experience_bit = (
-        f"{years_bit}I build production systems and work with product and engineering teams."
-        f"{skills_bit}{theme_bit}"
-    )
-    closing = (
-        f"I want the {title} role at {company} because it matches that experience. "
-        f"I can own delivery and help {company} ship reliable product work."
-    )
-    return " ".join(body_parts + [experience_bit, closing])
+    return f"{lead}{mid}{close}".replace("..", ".").strip()
 
 
 def template_cover_blurb(job: JobLike, apply_profile: dict[str, Any]) -> str:
@@ -223,20 +242,16 @@ def template_cover_blurb(job: JobLike, apply_profile: dict[str, Any]) -> str:
     company = job.company or "your team"
     title = job.title or "this role"
     years = (apply_profile.get("years_experience") or "").strip()
-    years_bit = f" with {years} years of experience" if years else ""
-    themes = _jd_theme_hits(job, 4)
-    theme_bit = f" The role asks for {', '.join(themes)}. " if themes else " "
-    skills = _skills_csv(apply_profile, 6)
-    skills_bit = f"My background includes {skills}." if skills else ""
-    facts = _career_facts(apply_profile)[:1]
-    evidence = f" {facts[0]}" if facts else ""
-    if evidence and not evidence.endswith((".", "!", "?")):
-        evidence += "."
+    years_bit = f" with {years} years shipping production backend work" if years else ""
+    evidence = _first_evidence(apply_profile)
+    evidence_bit = f" {evidence}" if evidence else ""
+    shape = _work_shape_phrase(job)
     return (
         f"Hello,\n\n"
-        f"I am {name}{years_bit}.{theme_bit}{skills_bit}{evidence} "
-        f"I want to bring that experience to the {title} role at {company}.\n\n"
-        f"I attached my resume. I am happy to share more details.\n\n"
+        f"I'm {name}{years_bit}.{evidence_bit}\n\n"
+        f"I'm interested in the {title} opening at {company} because it is {shape} "
+        f"work owned through production — not a ticket factory. "
+        f"I've attached my resume and I'm happy to talk through relevant examples.\n\n"
         f"Best regards,\n{name}"
     )
 
@@ -244,28 +259,33 @@ def template_cover_blurb(job: JobLike, apply_profile: dict[str, Any]) -> str:
 def template_relevant_experience(job: JobLike, apply_profile: dict[str, Any]) -> str:
     company = job.company or "this company"
     title = job.title or "this role"
-    years = (apply_profile.get("years_experience") or "").strip()
-    years_bit = f"{years} years of " if years else ""
-    themes = _jd_theme_hits(job)
-    theme_clause = (
-        f"This {title} role at {company} calls for {', '.join(themes[:5])}. "
-        if themes
-        else f"For the {title} role at {company}, "
-    )
+    shape = _work_shape_phrase(job)
     facts = _career_facts(apply_profile)[:2]
-    highlights = _experience_highlights(apply_profile)[:3]
+    highlights = _experience_highlights(apply_profile)[:2]
     if facts:
-        evidence = " ".join(facts)
-    elif highlights:
-        evidence = "Relevant experience includes: " + "; ".join(highlights) + "."
-    else:
-        skills = _skills_csv(apply_profile, 8)
-        evidence = (
-            f"I bring {years_bit}hands-on experience delivering production systems"
-            + (f" with {skills}" if skills else "")
-            + "."
+        evidence = " ".join(
+            f if f.endswith((".", "!", "?")) else f"{f}." for f in facts
         )
-    return f"{theme_clause}{evidence} That maps directly to what this role needs."
+    elif highlights:
+        evidence = " ".join(
+            h if h.endswith((".", "!", "?")) else f"{h}." for h in highlights
+        )
+    else:
+        years = (apply_profile.get("years_experience") or "").strip()
+        skills = _skills_csv(apply_profile, 6)
+        years_bit = f"{years} years of " if years else ""
+        skills_bit = f", including {skills}," if skills else ""
+        evidence = (
+            f"I have {years_bit}hands-on delivery of production systems{skills_bit} "
+            f"working with product and engineering through release."
+        )
+        if not evidence.endswith("."):
+            evidence += "."
+    return (
+        f"The {title} brief at {company} is essentially {shape}. {evidence} "
+        f"That is the same bar I hold my own work to: clear interfaces, "
+        f"reliable delivery, and ownership after ship."
+    )
 
 
 def template_application_answers(job: JobLike, apply_profile: dict[str, Any]) -> list[dict[str, str]]:
@@ -274,27 +294,24 @@ def template_application_answers(job: JobLike, apply_profile: dict[str, Any]) ->
     years = (apply_profile.get("years_experience") or "").strip() or "several"
     facts = _career_facts(apply_profile)
     highlights = _experience_highlights(apply_profile)
-    themes = _jd_theme_hits(job, 3)
+    shape = _work_shape_phrase(job)
     if facts:
         achievement = facts[0]
     elif highlights:
         achievement = highlights[0]
     else:
         achievement = (
-            "I have delivered production features end-to-end, collaborating with "
-            "product and engineering to ship reliable user-facing systems."
+            "I have delivered production features end-to-end with product and engineering, "
+            "and stayed responsible for them after release."
         )
-    if themes:
-        why = (
-            f"I want the {title} role at {company} because the JD focuses on "
-            f"{', '.join(themes)}. That matches work I already do. "
-            f"I can contribute quickly and own features from design to production."
-        )
-    else:
-        why = (
-            f"I want the {title} role at {company} because it matches work I already do. "
-            f"I can contribute quickly and own features from design to production."
-        )
+    evidence = _first_evidence(apply_profile)
+    evidence_bit = f" {evidence}" if evidence else ""
+    why = (
+        f"{company} is hiring a {title} to do {shape} in a product setting. "
+        f"That is the work I look for: real users, real constraints, and ownership "
+        f"past the pull request.{evidence_bit} "
+        f"I'm applying because this role is that job — not because the tech list matches mine."
+    )
     return [
         {"question": "Tell us about yourself", "answer": template_about_yourself(job, apply_profile)},
         {"question": "Why do you want this role / Why this company?", "answer": why},
@@ -313,8 +330,8 @@ def template_application_answers(job: JobLike, apply_profile: dict[str, Any]) ->
         {
             "question": "Notice period / Availability",
             "answer": (
-                f"I am available to start in {apply_profile.get('earliest_start') or '2–4 weeks'} "
-                f"and can interview on a flexible remote schedule."
+                f"I can start in {apply_profile.get('earliest_start') or '2–4 weeks'} "
+                f"and I'm flexible for remote interviews."
             ),
         },
     ]
@@ -368,29 +385,27 @@ async def generate_cover_blurb(
     rewrite_bit = ""
     if rewrite and previous.strip():
         rewrite_bit = (
-            "Rewrite from scratch in ASD-STE100 with a sharper JD-specific angle. "
-            "Keep facts truthful. Do not reuse stock phrases from the previous note.\n"
+            "Rewrite from scratch. Sharper company-specific angle. Keep facts truthful. "
+            "Do not reuse stock phrases from the previous note.\n"
             f"Previous cover note:\n{previous[:2000]}\n"
         )
-    themes = ", ".join(_jd_theme_hits(job, 8)) or "(infer from the full description)"
     prompt = (
-        "Write a short cover note for THIS role only (90–130 words). Use ASD-STE100.\n"
+        "Write a short cover note a hiring manager would take seriously (90–140 words).\n"
         "Structure:\n"
-        "1) Who you are + exact role + company.\n"
-        "2) Map 2–3 JD requirements to real profile experience "
-        "(name stack/outcomes the JD asks for — only if supported).\n"
-        "3) Why THIS company/product using domain language from the JD (not vague interest).\n"
-        "4) Closing: resume attached + open to talk.\n"
-        "No hype adjectives. No generic blurb that could fit any company.\n"
+        "1) Who you are (name + seniority/experience), without listing your whole stack.\n"
+        "2) One real example from the profile that proves you can do THIS job's work.\n"
+        "3) Why THIS company/product/problem — inferred from the JD, not 'your tech list matches'.\n"
+        "4) Close: resume attached, open to talk.\n"
+        "Do not dump JD keywords. Do not write 'I want the role because the JD focuses on…'.\n"
+        "If you could paste this under another company name and it still works, rewrite it.\n"
         f"{rewrite_bit}"
-        f"JD themes to hit if supported by the profile: {themes}\n"
         f"Candidate:\n{json.dumps({k: v for k, v in apply_profile.items() if k != 'experience_highlights'}, indent=2)[:3500]}\n"
         f"{_career_context_blob(apply_profile)}\n"
         f"Job title: {job.title}\nCompany: {job.company}\nLocation: {job.location}\n"
         f"FULL job description:\n{_job_description(job, 4500)}\n"
         "Return plain text only. No bullet list. No subject line."
     )
-    return await _llm_text(prompt, fallback, max_tokens=500, creds=creds)
+    return await _llm_text(prompt, fallback, max_tokens=550, creds=creds, temperature=0.5)
 
 
 async def generate_application_answers(
@@ -404,41 +419,37 @@ async def generate_application_answers(
     if not has_llm(creds):
         return fallback
     rewrite_bit = (
-        "Produce a fresh rewrite in ASD-STE100. Same question themes. "
-        "Stronger JD targeting. No stock phrases.\n"
+        "Produce a fresh rewrite. Same question themes. Stronger company-specific targeting. "
+        "No stock phrases. No keyword dumps.\n"
         if rewrite
         else ""
     )
-    themes = ", ".join(_jd_theme_hits(job, 10)) or "(read the full JD carefully)"
     prompt = (
-        "Create truthful ASD-STE100 answers for common application form questions for THIS job only.\n"
+        "Write truthful application-form answers a senior hiring manager would respect.\n"
         "Return ONLY JSON: {\"answers\":[{\"question\":\"...\",\"answer\":\"...\"}]}\n"
         f"{rewrite_bit}"
-        "Include these themes: about yourself, why this role/company, relevant experience, "
+        "Include: about yourself, why this role/company, relevant experience, "
         "years of experience, biggest achievement, work authorization/location, "
         "salary expectation, earliest start / availability.\n\n"
-        f"JD requirements/themes to prioritize (only if supported by profile): {themes}\n\n"
-        "About yourself (100–160 words, ASD-STE100):\n"
-        "- Lead with work most relevant to this JD — not a generic career bio.\n"
-        "- Map 2 concrete profile facts to JD needs.\n"
-        "- Close with why this role/company using JD product/domain language.\n"
+        "About yourself (110–170 words):\n"
+        "- Sound like a person, not a template. Lead with relevant work, not a keyword bio.\n"
+        "- One or two real facts from the profile. Close with why this team, specifically.\n"
         "- Never write Present/Past/Future labels.\n\n"
-        "Why this role / company (70–110 words):\n"
-        "- Name something specific from the JD (product, customers, stack, stage, problem).\n"
-        "- Tie it to one real experience. No passion filler.\n\n"
-        "Relevant experience / fit (100–160 words):\n"
-        "- Pull 3 concrete JD requirements.\n"
-        "- For each: employer/context from the profile + outcome (when known).\n"
-        "- If you cannot map a requirement honestly, omit it.\n"
-        "- Do not write a blurb that could fit any company.\n\n"
-        "Biggest achievement: pick the achievement that best proves fitness for THIS role.\n"
+        "Why this role / company (80–130 words):\n"
+        "- Name a product, user, problem, or stage from the JD — not a tech shopping list.\n"
+        "- Tie it to one real experience. Forbidden: 'I want the role because the JD focuses on…',\n"
+        "  'that matches work I already do', 'own features from design to production'.\n\n"
+        "Relevant experience / fit (110–170 words):\n"
+        "- Two or three JD needs, each mapped to employer/context + outcome when known.\n"
+        "- Omit what you cannot support. Must not work if you swap the company name.\n\n"
+        "Biggest achievement: the one that best proves fitness for THIS role.\n"
         "Short answers (years, auth, salary, start) stay factual from the profile.\n\n"
         f"Candidate profile:\n{json.dumps({k: v for k, v in apply_profile.items() if k != 'experience_highlights'}, indent=2)[:3500]}\n"
         f"{_career_context_blob(apply_profile)}\n"
         f"Job title: {job.title}\nCompany: {job.company}\nLocation: {job.location}\n"
         f"FULL job description:\n{_job_description(job, 5000)}\n"
     )
-    raw = await _llm_text(prompt, "", max_tokens=2200, creds=creds, temperature=0.35)
+    raw = await _llm_text(prompt, "", max_tokens=2400, creds=creds, temperature=0.5)
     if not raw:
         return fallback
     try:
@@ -486,34 +497,31 @@ async def rewrite_single_answer(
         for item in template_application_answers(job, apply_profile)
     }
     fallback = previous_answer or fallbacks.get(question.lower()) or template_about_yourself(job, apply_profile)
-    themes = ", ".join(_jd_theme_hits(job, 8))
     ql = question.lower()
     focus = (
-        "Rewrite in ASD-STE100. Every claim must be checkable against the profile "
-        "and useful for THIS JD. Drop empty adjectives and hype.\n"
+        "Rewrite for a senior hiring manager. Every claim must be checkable against "
+        "the profile and useful for THIS JD. Drop hype and keyword dumps.\n"
     )
     if "about yourself" in ql:
         focus = (
-            "ASD-STE100. Lead with experience most relevant to this JD. "
-            "Map two profile facts to JD needs. Close with company/role fit. "
-            "No Present/Past/Future labels.\n"
+            "Lead with experience most relevant to this JD. One or two real facts. "
+            "Close with why this team. No Present/Past/Future labels. No tech shopping list.\n"
         )
     elif any(k in ql for k in ("why this", "why do you want", "why our", "company")):
         focus = (
-            "ASD-STE100. Name something specific from the JD "
-            "(product, users, stack, or problem). Tie it to one real experience. "
-            "No passion filler.\n"
+            "Name something specific from the JD (product, users, problem, or stage). "
+            "Tie it to one real experience. Forbidden: 'JD focuses on', "
+            "'matches work I already do', passion filler.\n"
         )
     elif any(k in ql for k in ("relevant experience", "makes you a fit", "why are you a fit", "why you")):
         focus = (
-            "ASD-STE100. Pull 2–4 concrete JD requirements and map each to profile "
-            "experience (employer + outcome when known). Omit what you cannot support.\n"
+            "Map 2–3 JD needs to profile experience (employer + outcome when known). "
+            "Omit what you cannot support. Must not fit every company.\n"
         )
     prompt = (
         f"{focus}"
         f"Question: {question}\n"
-        f"JD themes: {themes or 'see full description'}\n"
-        f"Previous answer (improve targeting; do not lightly paraphrase fluff):\n{previous_answer[:2500]}\n"
+        f"Previous answer (improve; do not lightly paraphrase fluff):\n{previous_answer[:2500]}\n"
         f"Candidate profile:\n{json.dumps({k: v for k, v in apply_profile.items() if k != 'experience_highlights'}, indent=2)[:3000]}\n"
         f"{_career_context_blob(apply_profile)}\n"
         f"Job title: {job.title}\nCompany: {job.company}\n"

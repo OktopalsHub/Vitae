@@ -4,11 +4,25 @@
 <div class="page-head">
   <p class="eyebrow">Profiles</p>
   <h1>Career tracks</h1>
-  <p class="lede">Each profile is a separate track — Backend, Support, DevOps — with its own CV, matches, AI keys, and subscription. Archiving soft-deletes a track (you can’t archive the last one, or one with an active paid plan).</p>
+  <p class="lede">Create a track per job search (Backend, Support, DevOps). Each has its own CV, matches, and billing.</p>
+</div>
+
+<div class="panel" id="new">
+  <h3 class="rule-title" style="margin-top:0">New profile</h3>
+  <p class="meta">Starts on Free. Subscribe later if you want full unlock + AI on this track.</p>
+  <form method="post" action="/profiles/create" class="form-grid" data-busy>
+    <label>Label
+      <input name="label" placeholder="e.g. Backend Engineer" required maxlength="128" />
+    </label>
+    <div><button class="btn btn-primary" type="submit">Create profile</button></div>
+  </form>
 </div>
 
 <div class="panel">
   <h3 class="rule-title" style="margin-top:0">Your profiles</h3>
+  {% if not profiles %}
+  <p class="meta">No tracks yet. Create one above.</p>
+  {% else %}
   <div class="profile-list">
     {% for p in profiles %}
     <div class="profile-row{% if p.active %} is-active{% endif %}">
@@ -30,10 +44,12 @@
         {% if not p.active %}
         <form method="post" action="/profiles/switch">
           <input type="hidden" name="profile_id" value="{{ p.id }}" />
-          <button class="btn" type="submit">Switch</button>
+          <button class="btn btn-primary" type="submit">Switch to this track</button>
         </form>
         {% else %}
+        <span class="badge ok">Active</span>
         <a class="btn" href="/billing">Billing</a>
+        {% if not p.confirmed %}<a class="btn" href="/onboarding">Finish onboarding</a>{% endif %}
         {% endif %}
         {% if p.can_archive %}
         <form method="post" action="/profiles/archive" onsubmit="return confirm('Archive this profile? Other tracks stay active.');">
@@ -47,14 +63,6 @@
     </div>
     {% endfor %}
   </div>
-
-  <h3 class="rule-title">Add a track</h3>
-  <p class="meta">New profiles start on Free. Subscribe separately when you want full unlock + AI for that track.</p>
-  <form method="post" action="/profiles/create" class="form-grid" data-busy>
-    <label>Label
-      <input name="label" placeholder="e.g. Backend Engineer" required maxlength="128" />
-    </label>
-    <div><button class="btn btn-primary" type="submit">Create profile</button></div>
-  </form>
+  {% endif %}
 </div>
 {% endblock %}

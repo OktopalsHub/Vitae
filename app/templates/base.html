@@ -16,7 +16,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,500;0,9..144,650;1,9..144,500&family=Source+Sans+3:wght@400;550;650&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/static/styles.css?v=20260812c" />
+  <link rel="stylesheet" href="/static/styles.css?v=20260813a" />
 </head>
 <body class="{% block body_class %}{% endblock %}">
   <div id="working" class="working-banner" aria-live="polite">
@@ -31,10 +31,11 @@
       <nav class="nav" id="siteNav" aria-label="Primary">
         {% if user %}
           {% if profile_ready %}<a href="/jobs">Jobs</a>{% endif %}
-          {% if nav_profiles %}
+          <a href="/profiles"{% if request.url.path.startswith("/profiles") %} aria-current="page"{% endif %}>Profiles</a>
+          {% if nav_profiles and nav_profiles|length > 1 %}
           <details class="nav-profile">
             <summary class="nav-profile-summary" title="Switch career track">
-              {{ active_profile.label if active_profile else "Profiles" }}
+              {{ active_profile.label if active_profile else "Switch" }}
             </summary>
             <div class="nav-profile-menu">
               {% for p in nav_profiles %}
@@ -47,11 +48,9 @@
                 </form>
                 {% endif %}
               {% endfor %}
-              <a class="nav-profile-item nav-profile-manage" href="/profiles">Manage profiles</a>
+              <a class="nav-profile-item nav-profile-manage" href="/profiles#new">New profile</a>
             </div>
           </details>
-          {% else %}
-          <a href="/profiles">Profiles</a>
           {% endif %}
           <a href="/billing">Billing</a>
           {% if profile_ready %}<a href="/settings">Settings</a>{% else %}<a href="/onboarding">Onboarding</a>{% endif %}
@@ -150,7 +149,8 @@
           navToggle.setAttribute("aria-expanded", open ? "true" : "false");
         });
         nav.addEventListener("click", function (e) {
-          if (e.target.closest("a, button, summary")) closeNav();
+          if (e.target.closest(".nav-profile summary")) return;
+          if (e.target.closest("a, button")) closeNav();
         });
         document.addEventListener("keydown", function (e) {
           if (e.key === "Escape" && document.documentElement.classList.contains("nav-open")) closeNav();

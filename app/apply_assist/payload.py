@@ -24,6 +24,14 @@ from app.apply_assist.legacy_draft import (
 JobLike = Any
 logger = logging.getLogger(__name__)
 
+# Old template voice — regenerate instead of serving it again.
+_STALE_COPY_MARKERS = (
+    "because the jd focuses on",
+    "that matches work i already do",
+    "own features from design to production",
+    "this work maps to",
+)
+
 
 def default_apply_profile() -> dict[str, Any]:
     """Legacy shared-profile defaults for single-user smoke scripts only."""
@@ -117,6 +125,13 @@ async def ensure_apply_copy(
     draft = existing if isinstance(existing, dict) else {}
     cover = str(draft.get("cover_blurb") or "").strip()
     answers = draft.get("answers") if isinstance(draft.get("answers"), list) else []
+    blob = " ".join(
+        [cover]
+        + [str(a.get("answer") or "") for a in answers if isinstance(a, dict)]
+    ).lower()
+    if any(marker in blob for marker in _STALE_COPY_MARKERS):
+        force_cover = True
+        force_answers = True
 
     if force_cover or not cover:
         cover = await generate_cover_blurb(

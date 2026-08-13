@@ -6,7 +6,11 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from app.apply_assist import template_about_yourself, template_cover_blurb
+from app.apply_assist import (
+    template_about_yourself,
+    template_application_answers,
+    template_cover_blurb,
+)
 from app.tailor.generator import _fallback_resume, build_tailored_content, generate_resume_files
 
 
@@ -137,3 +141,10 @@ def test_apply_templates_use_profile_not_hardcoded_author():
     assert "Metaverse" not in about
     assert "Teamlyf" not in about
     assert "Analytical Engine" in about
+    answers = template_application_answers(job, profile)
+    why = next(a["answer"] for a in answers if "why this" in a["question"].lower())
+    blob = f"{cover}\n{about}\n{why}".lower()
+    assert "jd focuses" not in blob
+    assert "that matches work i already do" not in blob
+    assert "own features from design to production" not in blob
+    assert "globex" in why.lower()
