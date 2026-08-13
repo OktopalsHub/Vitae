@@ -76,6 +76,8 @@ def migrate_schema() -> None:
     _ensure_column("job_listings", "last_seen_at", "TIMESTAMP")
     _ensure_column("job_listings", "public_id", "VARCHAR(32) DEFAULT ''")
     _ensure_column("user_jobs", "profile_id", "INTEGER")
+    _ensure_column("user_jobs", "scored_at", "TIMESTAMP")
+    _ensure_column("user_jobs", "output_dir", "VARCHAR(512)")
     _ensure_column("apply_drafts", "profile_id", "INTEGER")
     _ensure_column("profiles", "archived_at", "TIMESTAMP")
     _ensure_column("profiles", "free_unlocked_json", "TEXT DEFAULT '[]'")
