@@ -1,9 +1,14 @@
 """generator package — consolidated AI generation for Vitae.
 
 All prompt engineering and content generation lives here:
-  - apply_copy.py  — cover letters, application answers, rewrite logic
-  - cv_tailor.py   — resume tailoring, PDF/DOCX export
-  - orchestrate.py — coordination layer, stale copy detection
+  - apply_prompts.py  — ASD-STE100 rules, system prompt, JD wrapper
+  - apply_templates.py — template fallbacks when no LLM available
+  - apply_copy.py     — LLM-powered cover letters, application answers
+  - cv_prompts.py     — resume tailoring system prompt
+  - cv_helpers.py      — text helpers, rule-based fallback, post-validation
+  - cv_export.py      — DOCX, PDF, Markdown writers
+  - cv_tailor.py      — resume tailoring orchestration
+  - orchestrate.py    — coordination layer, stale copy detection
 """
 
 from __future__ import annotations
@@ -15,11 +20,13 @@ from app.generator.orchestrate import (
     load_apply_profile,
     rewrite_answer_in_draft,
 )
+from app.generator.apply_prompts import APPLY_WRITING_SYSTEM
 from app.generator.apply_copy import (
-    APPLY_WRITING_SYSTEM,
     generate_application_answers,
     generate_cover_blurb,
     rewrite_single_answer,
+)
+from app.generator.apply_templates import (
     template_application_answers,
     template_about_yourself,
     template_cover_blurb,
