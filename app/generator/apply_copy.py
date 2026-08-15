@@ -24,6 +24,55 @@ logger = logging.getLogger(__name__)
 
 _MIN_LLM_ANSWERS = 5
 
+
+def _parse_llm_json(text: str) -> Any:
+    """Parse JSON from LLM output, handling common LLM quirks."""
+    text = text.strip()
+    if text.startswith("```"):
+        text = re.sub(r"^```(?:json)?\s*", "", text)
+        text = re.sub(r"\s*```$", "", text)
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        pass
+    # Try to fix trailing commas before } or ]
+    fixed = re.sub(r",\s*([}\]])", r"\1", text)
+    try:
+        return json.loads(fixed)
+    except json.JSONDecodeError:
+        pass
+    # Try to find the first complete JSON object or array in the text
+    for start_char, end_char in [('{', '}'), ('[', ']')]:
+        depth = 0
+        in_string = False
+        escape = False
+        start_idx = None
+        for i, ch in enumerate(text):
+            if escape:
+                escape = False
+                continue
+            if ch == '\\' and in_string:
+                escape = True
+                continue
+            if ch == '"' and not escape:
+                in_string = not in_string
+                continue
+            if in_string:
+                continue
+            if ch == start_char:
+                if depth == 0:
+                    start_idx = i
+                depth += 1
+            elif ch == end_char:
+                depth -= 1
+                if depth == 0 and start_idx is not None:
+                    try:
+                        return json.loads(text[start_idx:i + 1])
+                    except json.JSONDecodeError:
+                        break
+        break
+    raise json.JSONDecodeError("Unable to extract valid JSON from LLM output", text, 0)
+
 # ---------------------------------------------------------------------------
 # Prompt injection defence
 # ---------------------------------------------------------------------------
@@ -463,15 +512,11 @@ async def generate_application_answers(
         f"{_job_meta(job)}\n"
         f"{_jd_analysis(job)}\n"
     )
-    raw = await _llm_text(prompt, "", max_tokens=2400, creds=creds, temperature=0.5)
+    raw = await _llm_text(prompt, "", max_tokens=4000, creds=creds, temperature=0.5)
     if not raw:
         return fallback
     try:
-        text = raw.strip()
-        if text.startswith("```"):
-            text = re.sub(r"^```(?:json)?\s*", "", text)
-            text = re.sub(r"\s*```$", "", text)
-        data = json.loads(text)
+        data = _parse_llm_json(raw)
         answers = data.get("answers") if isinstance(data, dict) else data
         cleaned: list[dict[str, str]] = []
         if isinstance(answers, list):

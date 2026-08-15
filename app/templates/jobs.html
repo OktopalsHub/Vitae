@@ -26,6 +26,19 @@
     </div>
   </header>
 
+  <div class="jobs-skeleton" id="jobsSkeleton" style="display:none;" aria-hidden="true">
+    {% for i in range(5) %}
+    <div class="skeleton-row">
+      <div class="skeleton skeleton-circle skeleton-score"></div>
+      <div class="skeleton-body">
+        <div class="skeleton skeleton-text" style="width:70%"></div>
+        <div class="skeleton skeleton-text-sm"></div>
+      </div>
+      <div class="skeleton skeleton-badge"></div>
+    </div>
+    {% endfor %}
+  </div>
+
   {% if not full_access %}
   <aside class="jobs-unlock" aria-label="Free openings">
     <div class="jobs-unlock__track" aria-hidden="true">
@@ -129,14 +142,36 @@
   {% else %}
   <div class="jobs-empty">
     {% if not has_matches %}
-      <p class="jobs-empty__title">No open roles yet</p>
-      <p class="meta">Check back shortly{% if is_admin %}, or run <a href="/admin">Admin → Sync now</a>{% endif %}.</p>
+      <div class="empty-state">
+        <svg class="empty-state__icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" fill="none" aria-hidden="true">
+          <circle cx="60" cy="60" r="56" stroke="var(--line)" stroke-width="2" fill="var(--paper-deep)"/>
+          <rect x="35" y="40" width="50" height="40" rx="4" stroke="var(--muted)" stroke-width="2" fill="var(--surface)"/>
+          <line x1="42" y1="52" x2="78" y2="52" stroke="var(--line-strong)" stroke-width="2"/>
+          <line x1="42" y1="60" x2="68" y2="60" stroke="var(--line-strong)" stroke-width="2"/>
+          <line x1="42" y1="68" x2="58" y2="68" stroke="var(--line-strong)" stroke-width="2"/>
+          <circle cx="85" cy="35" r="12" fill="var(--accent-soft)" stroke="var(--accent)" stroke-width="2"/>
+          <path d="M82 35l2 2 4-4" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <p class="jobs-empty__title">No open roles yet</p>
+        <p class="meta">Check back shortly{% if is_admin %}, or run <a href="/admin">Admin → Sync now</a>{% endif %}.</p>
+      </div>
     {% else %}
-      <p class="jobs-empty__title">Nothing at ≥{{ '%.0f'|format(min_score) }}%</p>
-      <p class="meta">Try a lower threshold, or paste a job you already found.</p>
-      <div class="page-actions" style="margin-top:var(--s4)">
-        <a class="btn btn-primary" href="/jobs?{{ pager.suggest_qs }}">Try {{ suggest_min }}%</a>
-        <a class="btn" href="/paste">Paste a job</a>
+      <div class="empty-state">
+        <svg class="empty-state__icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" fill="none" aria-hidden="true">
+          <circle cx="60" cy="60" r="56" stroke="var(--line)" stroke-width="2" fill="var(--paper-deep)"/>
+          <path d="M40 70l20-20 10 10 20-20" stroke="var(--accent)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+          <circle cx="40" cy="70" r="3" fill="var(--accent)"/>
+          <circle cx="60" cy="50" r="3" fill="var(--accent)"/>
+          <circle cx="70" cy="60" r="3" fill="var(--accent)"/>
+          <circle cx="90" cy="40" r="3" fill="var(--accent)"/>
+          <line x1="35" y1="85" x2="95" y2="85" stroke="var(--line-strong)" stroke-width="1.5" stroke-dasharray="4 4"/>
+        </svg>
+        <p class="jobs-empty__title">Nothing at ≥{{ '%.0f'|format(min_score) }}%</p>
+        <p class="meta">Try a lower threshold, or paste a job you already found.</p>
+        <div class="page-actions" style="margin-top:var(--s4)">
+          <a class="btn btn-primary" href="/jobs?{{ pager.suggest_qs }}">Try {{ suggest_min }}%</a>
+          <a class="btn" href="/paste">Paste a job</a>
+        </div>
       </div>
     {% endif %}
   </div>

@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+import logging
 import secrets
 from datetime import datetime
 from typing import Any
 
 from sqlalchemy import or_
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, load_only, noload
+
+log = logging.getLogger(__name__)
 
 from app.config import get_settings, load_yaml_config
 from app.matching.score_cache import (
@@ -320,8 +324,16 @@ def list_job_cards(
             )
             score_map[listing.id] = row
             if i % 200 == 0:
-                db.flush()
-        db.flush()
+                try:
+                    db.flush()
+                except IntegrityError:
+                    db.rollback()
+                    log.debug("Flush batch failed due to race — continuing")
+        try:
+            db.flush()
+        except IntegrityError:
+            db.rollback()
+            log.debug("Final cold-path flush failed due to race — continuing")
 
     overlays = {
         uj.listing_id: uj
@@ -391,7 +403,11 @@ def list_job_cards(
         )
 
     cards.sort(key=lambda c: (-c.match_score, c.title.lower()))
-    db.flush()  # persist score fills + any newly assigned public_id tokens
+    try:
+        db.flush()  # persist score fills + any newly assigned public_id tokens
+    except IntegrityError:
+        db.rollback()
+        log.debug("Final flush in list_job_cards failed due to race — continuing")
     return cards
 
 
@@ -428,8 +444,16 @@ def refresh_profile_match_scores(db: Session, user: User) -> int:
         )
         n += 1
         if n % 200 == 0:
-            db.flush()
-    db.flush()
+            try:
+                db.flush()
+            except IntegrityError:
+                db.rollback()
+                log.debug("Flush batch in refresh_profile_match_scores failed due to race")
+    try:
+        db.flush()
+    except IntegrityError:
+        db.rollback()
+        log.debug("Final flush in refresh_profile_match_scores failed due to race")
     return n
 
 

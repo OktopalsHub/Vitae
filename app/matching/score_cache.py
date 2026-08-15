@@ -4,13 +4,17 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 from datetime import datetime
 from typing import Any
 
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.matching.scorer import reasons_to_json, score_job
 from app.models import ListingMatchScore
+
+log = logging.getLogger(__name__)
 
 # Cap JD text used for ranking (detail pages still load full description).
 RANK_DESC_CHARS = 6000
@@ -83,12 +87,33 @@ def upsert_match_score(
             scored_at=now,
         )
         db.add(row)
+        try:
+            db.flush()
+        except IntegrityError:
+            db.rollback()
+            log.debug(
+                "Race on (profile_id=%s, listing_id=%s) — falling back to update",
+                profile_id,
+                listing_id,
+            )
+            row = (
+                db.query(ListingMatchScore)
+                .filter(
+                    ListingMatchScore.profile_id == profile_id,
+                    ListingMatchScore.listing_id == listing_id,
+                )
+                .one()
+            )
+            row.match_score = match_score
+            row.match_reasons = match_reasons or ""
+            row.fingerprint = fingerprint
+            row.scored_at = now
+            db.flush()
     else:
         row.match_score = match_score
         row.match_reasons = match_reasons or ""
         row.fingerprint = fingerprint
         row.scored_at = now
-        db.add(row)
     return row
 
 

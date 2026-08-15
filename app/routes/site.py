@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Request
-from fastapi.responses import HTMLResponse, PlainTextResponse, Response
+from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 
 from app.config import project_path, site_base_url
@@ -13,6 +13,11 @@ from app.web_helpers import template_ctx
 
 router = APIRouter(tags=["site"])
 templates = Jinja2Templates(directory=str(project_path("app", "templates")))
+
+
+@router.get("/favicon.ico")
+def favicon_ico() -> RedirectResponse:
+    return RedirectResponse(url="/static/favicon.svg", status_code=301)
 
 _PUBLIC_PATHS = (
     "/",

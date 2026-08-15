@@ -11,8 +11,14 @@
       <div class="error" role="alert">{{ error }}</div>
     {% endif %}
     <form method="post" action="/register" class="form-grid" style="margin-top:var(--s4)">
-      <label style="grid-column:1/-1">Email<input type="email" name="email" required autocomplete="email" placeholder="you@example.com" /></label>
-      <label style="grid-column:1/-1">Password<input type="password" name="password" required minlength="8" autocomplete="new-password" placeholder="At least 8 characters" /></label>
+      <div class="form-group" style="grid-column:1/-1">
+        <label>Email<input type="email" name="email" required autocomplete="email" placeholder="you@example.com" /></label>
+        <span class="field-error"></span>
+      </div>
+      <div class="form-group" style="grid-column:1/-1">
+        <label>Password<input type="password" name="password" required minlength="8" autocomplete="new-password" placeholder="At least 8 characters" /></label>
+        <span class="field-error"></span>
+      </div>
       <div><button class="btn btn-primary" type="submit">Create account</button></div>
     </form>
     <p class="divider">Or continue with</p>
