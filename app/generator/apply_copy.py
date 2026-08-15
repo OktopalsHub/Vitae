@@ -140,6 +140,15 @@ APPLY_WRITING_SYSTEM = f"""{_PROMPT_INJECTION_GUARD}
 You write application copy for a specific job posting. The profile
 below is the only source of truth for the candidate. The JD is the
 only source of truth for what the employer wants.
+
+QUALITY RULES:
+- Write like a real person applying for a job, not like a template.
+- Every sentence must earn its place. Cut anything that could apply to any job.
+- Lead with your strongest, most specific fact. Do not save it for later.
+- Connect your experience to what this company actually builds or does.
+- Do NOT use filler phrases: "I am writing to", "I am excited about", "I believe I would be".
+- Do NOT repeat the company name in every sentence.
+- Do NOT start with generic openers. Start with who you are or what you have done.
 """
 
 
@@ -289,13 +298,11 @@ def template_cover_blurb(job: JobLike, apply_profile: dict[str, Any]) -> str:
     evidence = _first_evidence(apply_profile)
     evidence_bit = f" {evidence}" if evidence else ""
     return (
-        f"Dear Hiring Manager,\n\n"
         f"I am {name}.{f' {years_bit}' if years_bit else ''}{evidence_bit}\n\n"
-        f"I am interested in the {title} role at {company}. "
-        f"The work matches my experience. I build and own production systems. "
-        f"I have attached my resume.\n\n"
-        f"I am available to discuss relevant examples.\n\n"
-        f"Best regards,\n{name}"
+        f"The {title} role at {company} fits this background. "
+        f"I build and own production systems from design through launch. "
+        f"My resume has more detail.\n\n"
+        f"I am available to discuss relevant examples."
     )
 
 
@@ -327,7 +334,7 @@ def template_relevant_experience(job: JobLike, apply_profile: dict[str, Any]) ->
     return (
         f"The {title} role at {company} needs production-system experience. "
         f"{evidence} "
-        f"I apply the same standard: clear design, reliable delivery, and ownership after ship."
+        f"I design, build, and maintain systems that ship to real users."
     )
 
 
@@ -351,8 +358,8 @@ def template_application_answers(job: JobLike, apply_profile: dict[str, Any]) ->
     evidence_bit = f" {evidence}" if evidence else ""
     why = (
         f"{company} builds a product that needs a {title}. "
-        f"That matches my experience.{evidence_bit} "
-        f"I apply because the work fits what I do."
+        f"{evidence_bit} "
+        f"This work fits what I do. I build and maintain production systems."
     )
     return [
         {"question": "Tell us about yourself", "answer": template_about_yourself(job, apply_profile)},
@@ -451,7 +458,10 @@ async def generate_cover_blurb(
         "- Every claim MUST come from the profile below.\n"
         "- Do NOT use: passionate, results-driven, world-class, cutting-edge, seamless.\n"
         "- Do NOT write: 'I want the role because the JD focuses on...'\n"
-        "- Name the company once. Do not repeat it in every sentence.\n\n"
+        "- Name the company once. Do not repeat it in every sentence.\n"
+        "- Do NOT start sentences with 'I am writing' or 'I am interested'. Start with who you are or what you have done.\n"
+        "- Make the first sentence memorable. Lead with your strongest fact.\n"
+        "- Connect your experience to what the company actually builds or does.\n\n"
         f"{rewrite_bit}"
         f"{_full_profile_context(apply_profile)}\n\n"
         f"{_job_meta(job)}\n"
@@ -487,20 +497,25 @@ async def generate_application_answers(
         "- Every answer MUST be specific to this JD.\n"
         "- Max 20 words per sentence. One idea per sentence. Active voice.\n"
         "- Do NOT use: passionate, results-driven, world-class, seamless.\n"
-        "- Do NOT write: 'the JD focuses on...', 'matches work I already do'.\n\n"
+        "- Do NOT write: 'the JD focuses on...', 'matches work I already do'.\n"
+        "- Write like a real person, not a template. Use natural phrasing.\n"
+        "- Each answer should feel like it was written for THIS specific job, not copied from a generic script.\n\n"
         "QUESTIONS:\n\n"
         "1. Tell us about yourself (110-170 words)\n"
         "   Use this structure:\n"
         "   PAST: What you have done. One or two facts from the profile.\n"
         "   PRESENT: What you do now. Your current focus or role.\n"
         "   FUTURE: Why this company. One sentence connecting to the JD.\n"
-        "   Write it as natural prose, not labelled sections.\n\n"
+        "   Write it as natural prose, not labelled sections.\n"
+        "   Do NOT start with 'I am a [title] with X years of experience'. Start with something specific you have built or done.\n\n"
         "2. Why do you want this role / Why this company? (80-130 words)\n"
         "   Name something specific from the JD (product, users, problem).\n"
-        "   Tie it to one real experience from the profile.\n\n"
+        "   Tie it to one real experience from the profile.\n"
+        "   Do NOT say 'I am excited about' or 'I am passionate about'. Say what specifically draws you to this work.\n\n"
         "3. Relevant experience / What makes you a fit? (110-170 words)\n"
         "   Map 2-3 JD needs to profile experience (employer + outcome).\n"
-        "   Must NOT be generic. Should only work for THIS company.\n\n"
+        "   Must NOT be generic. Should only work for THIS company.\n"
+        "   Use specific numbers, tools, and outcomes from the profile.\n\n"
         "4. Years of experience\n"
         "5. Biggest achievement\n"
         "6. Work authorization / Location\n"
@@ -563,6 +578,7 @@ async def rewrite_single_answer(
         "Max 20 words per sentence. One idea per sentence. Active voice.\n"
         "Every claim must trace to the profile. Must be specific to THIS JD.\n"
         "Do NOT use: passionate, results-driven, world-class, seamless, robust.\n"
+        "Write like a real person. Avoid template phrases.\n"
     )
     if "about yourself" in ql:
         focus = (
@@ -572,6 +588,7 @@ async def rewrite_single_answer(
             "PRESENT: What you do now. Your current focus or role.\n"
             "FUTURE: Why this company. One sentence connecting to the JD.\n"
             "Max 20 words per sentence. Active voice. No hype words.\n"
+            "Do NOT start with 'I am a [title] with X years of experience'. Start with something specific you have built.\n"
         )
     elif any(k in ql for k in ("why this", "why do you want", "why our", "company")):
         focus = (
@@ -579,12 +596,14 @@ async def rewrite_single_answer(
             "Name something specific from the JD (product, users, problem).\n"
             "Tie it to one real experience from the profile.\n"
             "Forbidden: 'JD focuses on', 'matches work I already do'.\n"
+            "Do NOT say 'I am excited about'. Say what specifically draws you to this work.\n"
         )
     elif any(k in ql for k in ("relevant experience", "makes you a fit", "why are you a fit", "why you")):
         focus = (
             "Rewrite 'Relevant experience' in ASD-STE100 voice.\n"
             "Map 2-3 JD needs to profile experience (employer + outcome).\n"
             "Must NOT be generic. Should only work for THIS company.\n"
+            "Use specific numbers, tools, and outcomes from the profile.\n"
         )
     prompt = (
         f"{focus}\n"

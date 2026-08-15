@@ -1,28 +1,28 @@
 {% extends "base.html" %}
 {% block title %}{{ job.title }} · Vitae{% endblock %}
 {% block content %}
-<div class="page-head detail-hero" style="max-width:none">
-  <div class="actions" style="justify-content:space-between; margin-bottom:var(--s4)">
-    <a class="btn" href="{{ jobs_back or '/jobs' }}">← Back to jobs</a>
-    <div class="actions">
-      {% if apply_url %}
-      <a class="btn" href="{{ apply_url }}" target="_blank" rel="noopener">Open apply page</a>
-      {% endif %}
-      <form action="/jobs/{{ job.public_id }}/generate" method="post" data-busy>
-        <button class="btn btn-primary" type="submit">Generate tailored CV</button>
-      </form>
-    </div>
+<div class="detail-topbar">
+  <a class="btn" href="{{ jobs_back or '/jobs' }}">← Back to jobs</a>
+  <div class="actions">
+    {% if apply_url %}
+    <a class="btn" href="{{ apply_url }}" target="_blank" rel="noopener">Open apply page</a>
+    {% endif %}
+    <form action="/jobs/{{ job.public_id }}/generate" method="post" data-busy>
+      <button class="btn btn-primary" type="submit">Generate tailored CV</button>
+    </form>
   </div>
+</div>
 
+<div class="detail-hero" style="max-width:none">
   <h1>{{ job.title }}</h1>
   <p class="detail-meta">
-    {% if job.company %}<span>{{ job.company }}</span><span class="dot">·</span>{% endif %}
+    {% if job.company %}<span class="detail-meta__company">{{ job.company }}</span><span class="dot">·</span>{% endif %}
     {% if job.location %}<span>{{ job.location }}</span><span class="dot">·</span>{% endif %}
     <span class="score">{{ '%.0f'|format(job.match_score) }}% match</span><span class="dot">·</span>
     <span class="badge {{ job.status }}">{{ job.status.replace('_', ' ') }}</span>
   </p>
 
-  <div class="actions">
+  <div class="detail-actions">
     <form action="/jobs/{{ job.public_id }}/status" method="post">
       <input type="hidden" name="status" value="applied" />
       {% if jobs_from %}<input type="hidden" name="from" value="{{ jobs_from }}" />{% endif %}
@@ -46,16 +46,16 @@
 </div>
 
 <div class="grid-2">
-  <div>
-    <div class="panel">
+  <div class="detail-left">
+    <div class="panel detail-section">
       <h3 class="rule-title" style="margin-top:0">Job description</h3>
       <div class="desc">{{ job.description or "(No description)" }}</div>
     </div>
 
-    <div class="panel">
+    <div class="panel detail-section">
       <h3 class="rule-title" style="margin-top:0">Match ranking</h3>
       {% set score = job.match_score|round|int %}
-      <div style="display:flex; align-items:center; gap:var(--s4); margin:0 0 var(--s2)">
+      <div class="match-ranking-header">
         <span class="ring {% if score >= 75 %}is-high{% elif score >= 50 %}is-mid{% else %}is-low{% endif %}" data-ring="{{ score }}" style="--ring-size:4.5rem"><span class="ring__label" style="font-size:1.15rem">{{ score }}</span></span>
         <div>
           <p class="score" style="font-size:1.2rem; margin:0">Match score</p>
@@ -68,25 +68,25 @@
       <p style="margin:0 0 var(--s3)"><strong>{{ breakdown.connection_summary if breakdown else "No breakdown available." }}</strong></p>
 
       {% if breakdown and breakdown.skill_hits %}
-      <h4 style="margin:var(--s3) 0 var(--s2)">Your skills found in the JD</h4>
-      <div style="margin:0 0 var(--s3)">
+      <h4 class="match-subheading">Your skills found in the JD</h4>
+      <div class="match-badge-row">
         {% for s in breakdown.skill_hits %}
-        <span class="badge ok" style="margin:0 var(--s1) var(--s1) 0">{{ s }}</span>
+        <span class="badge ok">{{ s }}</span>
         {% endfor %}
       </div>
       {% endif %}
 
       {% if breakdown and breakdown.skill_gaps %}
-      <h4 style="margin:var(--s3) 0 var(--s2)">Your core skills not mentioned</h4>
-      <div style="margin:0 0 var(--s3)">
+      <h4 class="match-subheading">Your core skills not mentioned</h4>
+      <div class="match-badge-row">
         {% for s in breakdown.skill_gaps %}
-        <span class="badge" style="margin:0 var(--s1) var(--s1) 0">{{ s }}</span>
+        <span class="badge">{{ s }}</span>
         {% endfor %}
       </div>
       {% endif %}
 
       {% if breakdown and breakdown.positives %}
-      <h4 style="margin:var(--s3) 0 var(--s2)">What raised the score</h4>
+      <h4 class="match-subheading">What raised the score</h4>
       <ul class="match-delta">
         {% for p in breakdown.positives %}
         <li><span class="delta up">+{{ '%.0f'|format(p.delta) }}</span> {{ p.label }}</li>
@@ -95,7 +95,7 @@
       {% endif %}
 
       {% if breakdown and breakdown.penalties %}
-      <h4 style="margin:var(--s3) 0 var(--s2)">What lowered the score</h4>
+      <h4 class="match-subheading">What lowered the score</h4>
       <ul class="match-delta">
         {% for p in breakdown.penalties %}
         <li>
@@ -112,9 +112,9 @@
       {% endif %}
     </div>
 
-    <div class="panel">
+    <div class="panel detail-section">
       <h3 class="rule-title" style="margin-top:0">Why it matched</h3>
-      <ul style="margin:0; padding-left:var(--s5); line-height:1.7">
+      <ul class="match-reasons">
         {% for r in reasons %}
           <li>{{ r }}</li>
         {% else %}
@@ -124,98 +124,106 @@
     </div>
   </div>
 
-  <div class="panel">
-    <h3 class="rule-title" style="margin-top:0">Apply Assist</h3>
-    <p class="apply-note">Copy fields into the employer form, attach your resume, then submit yourself. This app does not auto-submit applications.</p>
+  <div class="detail-right">
+    <div class="panel detail-section">
+      <h3 class="rule-title" style="margin-top:0">Apply Assist</h3>
+      <p class="apply-note">Copy fields into the employer form, attach your resume, then submit yourself. This app does not auto-submit applications.</p>
 
-    {% if apply_url %}
-    <p style="margin-top:0"><a class="btn btn-primary" href="{{ apply_url }}" target="_blank" rel="noopener">Open apply page</a></p>
-    {% else %}
-    <p class="meta">No apply URL on this listing. Paste the live URL from the job page if needed.</p>
-    {% endif %}
-
-    <div class="chip-list" style="margin:var(--s4) 0">
-      {% for chip in assist.chips %}
-      {% if chip.value %}
-      <div class="chip">
-        <div>
-          <strong>{{ chip.label }}</strong>
-          <span>{{ chip.value }}</span>
-        </div>
-        <button class="btn" type="button" onclick='copyField(this, {{ chip.value|tojson }})'>Copy</button>
-      </div>
+      {% if apply_url %}
+      <p style="margin-top:0"><a class="btn btn-primary" href="{{ apply_url }}" target="_blank" rel="noopener">Open apply page</a></p>
+      {% else %}
+      <p class="meta">No apply URL on this listing. Paste the live URL from the job page if needed.</p>
       {% endif %}
-      {% endfor %}
-    </div>
 
-    <form action="/jobs/{{ job.public_id }}/save-copy" method="post" id="cover-form">
-      <label>Cover note
-        <textarea id="cover-blurb" name="cover_blurb" class="cover-box">{{ cover_blurb }}</textarea>
-      </label>
-      <div class="actions" style="margin-top:var(--s2)">
-        <button class="btn" type="button" onclick="copyField(this, document.getElementById('cover-blurb').value)">Copy cover note</button>
-        <button class="btn" type="submit">Save cover edits</button>
-        <a class="btn" href="/settings">Edit apply profile</a>
-      </div>
-    </form>
-    <form action="/jobs/{{ job.public_id }}/rewrite/cover" method="post" data-busy style="margin-top:var(--s2)">
-      <button class="btn btn-primary" type="submit" {% if not keys.llm %}disabled title="Add an LLM API key in .env"{% endif %}>Rewrite cover with AI</button>
-    </form>
-
-    <h4 class="rule-title">Application answers</h4>
-    <p class="apply-note">Suggested answers for common form questions. Use Rewrite when you want a fresh AI draft.</p>
-    <form action="/jobs/{{ job.public_id }}/rewrite/answers" method="post" data-busy style="margin:var(--s2) 0 var(--s3)">
-      <button class="btn btn-primary" type="submit" {% if not keys.llm %}disabled title="Add an LLM API key in .env"{% endif %}>Rewrite all answers with AI</button>
-    </form>
-    <div class="chip-list" style="margin:var(--s3) 0 var(--s4)">
-      {% for item in app_answers %}
-      <div class="chip" style="align-items:flex-start; flex-direction:column; gap:var(--s2)">
-        <div style="width:100%">
-          <strong>{{ item.question }}</strong>
-          <span style="display:block; margin-top:var(--s1); white-space:pre-wrap">{{ item.answer }}</span>
+      <div class="chip-list" style="margin:var(--s4) 0">
+        {% for chip in assist.chips %}
+        {% if chip.value %}
+        <div class="chip">
+          <div>
+            <strong>{{ chip.label }}</strong>
+            <span>{{ chip.value }}</span>
+          </div>
+          <button class="btn" type="button" onclick='copyField(this, {{ chip.value|tojson }})'>Copy</button>
         </div>
-        <div class="actions">
-          <button class="btn" type="button" onclick='copyField(this, {{ item.answer|tojson }})'>Copy answer</button>
-          <form action="/jobs/{{ job.public_id }}/rewrite/answer" method="post" data-busy>
-            <input type="hidden" name="question" value="{{ item.question }}" />
-            <button class="btn" type="submit" {% if not keys.llm %}disabled{% endif %}>Rewrite with AI</button>
-          </form>
-        </div>
-      </div>
-      {% endfor %}
-    </div>
-
-    <h4 class="rule-title">Resume files</h4>
-    {% if files %}
-      <ul style="margin:0 0 var(--s2); padding-left:var(--s5); line-height:1.8">
-        {% for f in files %}
-          <li><a href="/jobs/{{ job.public_id }}/download/{{ f|path_quote }}">{{ f }}</a></li>
+        {% endif %}
         {% endfor %}
-      </ul>
-      <p class="meta">Files ready to download below.</p>
-    {% else %}
-      <p class="meta">Generate a tailored CV first, then download the PDF to upload on the apply form.</p>
-    {% endif %}
+      </div>
 
-    <form action="/jobs/{{ job.public_id }}/status" method="post" style="margin-top:var(--s3)">
-      <input type="hidden" name="status" value="applied" />
-      {% if jobs_from %}<input type="hidden" name="from" value="{{ jobs_from }}" />{% endif %}
-      <button class="btn btn-ok" type="submit">I submitted — mark applied</button>
-    </form>
+      <form action="/jobs/{{ job.public_id }}/save-copy" method="post" id="cover-form">
+        <label>Cover note
+          <textarea id="cover-blurb" name="cover_blurb" class="cover-box">{{ cover_blurb }}</textarea>
+        </label>
+        <div class="actions" style="margin-top:var(--s2)">
+          <button class="btn" type="button" onclick="copyField(this, document.getElementById('cover-blurb').value)">Copy cover note</button>
+          <button class="btn" type="submit">Save cover edits</button>
+          <a class="btn" href="/settings">Edit apply profile</a>
+        </div>
+      </form>
+      <form action="/jobs/{{ job.public_id }}/rewrite/cover" method="post" data-busy style="margin-top:var(--s2)">
+        <button class="btn btn-primary" type="submit" {% if not keys.llm %}disabled title="Add an LLM API key in .env"{% endif %}>Rewrite cover with AI</button>
+      </form>
+    </div>
 
-    <h4 class="rule-title">Tips</h4>
-    <ol class="meta" style="margin:0; padding-left:var(--s5); line-height:1.7">
-      <li>Generate tailored CV</li>
-      <li>Open apply page</li>
-      <li>Copy contact fields + cover note</li>
-      <li>Copy application answers as needed</li>
-      <li>Upload resume PDF</li>
-      <li>Submit on the employer site</li>
-      <li>Mark applied here</li>
-    </ol>
-    {% if not keys.llm %}
-    <p class="meta" style="margin-top:var(--s3)">LLM key missing — rewrite buttons stay off; templates still work.</p>
-    {% endif %}
+    <div class="panel detail-section">
+      <h4 class="rule-title" style="margin-top:0">Application answers</h4>
+      <p class="apply-note">Suggested answers for common form questions. Use Rewrite when you want a fresh AI draft.</p>
+      <form action="/jobs/{{ job.public_id }}/rewrite/answers" method="post" data-busy style="margin:var(--s2) 0 var(--s3)">
+        <button class="btn btn-primary" type="submit" {% if not keys.llm %}disabled title="Add an LLM API key in .env"{% endif %}>Rewrite all answers with AI</button>
+      </form>
+      <div class="chip-list" style="margin:var(--s3) 0 var(--s4)">
+        {% for item in app_answers %}
+        <div class="chip" style="align-items:flex-start; flex-direction:column; gap:var(--s2)">
+          <div style="width:100%">
+            <strong>{{ item.question }}</strong>
+            <span style="display:block; margin-top:var(--s1); white-space:pre-wrap">{{ item.answer }}</span>
+          </div>
+          <div class="actions">
+            <button class="btn" type="button" onclick='copyField(this, {{ item.answer|tojson }})'>Copy answer</button>
+            <form action="/jobs/{{ job.public_id }}/rewrite/answer" method="post" data-busy>
+              <input type="hidden" name="question" value="{{ item.question }}" />
+              <button class="btn" type="submit" {% if not keys.llm %}disabled{% endif %}>Rewrite with AI</button>
+            </form>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+
+    <div class="panel detail-section">
+      <h4 class="rule-title" style="margin-top:0">Resume files</h4>
+      {% if files %}
+        <ul class="resume-file-list">
+          {% for f in files %}
+            <li><a href="/jobs/{{ job.public_id }}/download/{{ f|path_quote }}">{{ f }}</a></li>
+          {% endfor %}
+        </ul>
+        <p class="meta">Files ready to download below.</p>
+      {% else %}
+        <p class="meta">Generate a tailored CV first, then download the PDF to upload on the apply form.</p>
+      {% endif %}
+
+      <form action="/jobs/{{ job.public_id }}/status" method="post" style="margin-top:var(--s3)">
+        <input type="hidden" name="status" value="applied" />
+        {% if jobs_from %}<input type="hidden" name="from" value="{{ jobs_from }}" />{% endif %}
+        <button class="btn btn-ok" type="submit">I submitted — mark applied</button>
+      </form>
+    </div>
+
+    <div class="detail-tips">
+      <h4 class="rule-title" style="margin-top:0">Tips</h4>
+      <ol class="meta tips-list">
+        <li>Generate tailored CV</li>
+        <li>Open apply page</li>
+        <li>Copy contact fields + cover note</li>
+        <li>Copy application answers as needed</li>
+        <li>Upload resume PDF</li>
+        <li>Submit on the employer site</li>
+        <li>Mark applied here</li>
+      </ol>
+      {% if not keys.llm %}
+      <p class="meta" style="margin-top:var(--s3)">LLM key missing — rewrite buttons stay off; templates still work.</p>
+      {% endif %}
+    </div>
   </div>
 </div>
 {% endblock %}

@@ -27,6 +27,16 @@ _STALE_COPY_MARKERS = (
     "that matches work i already do",
     "own features from design to production",
     "this work maps to",
+    "i am writing to express",
+    "i am excited about the opportunity",
+    "i am passionate about",
+    "my experience aligns perfectly",
+    "i believe i would be a great fit",
+    "the work matches my experience",
+    "i have attached my resume",
+    "best regards",
+    "sincerely",
+    "thank you for considering",
 )
 
 _APPLY_PROFILE_PATH = Path(__file__).resolve().parents[2] / "data" / "profile" / "apply_profile.json"
