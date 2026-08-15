@@ -10,11 +10,11 @@ from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
-from app.apply_assist import apply_assist_payload, rewrite_answer_in_draft
+from app.generator import apply_assist_payload, rewrite_answer_in_draft
 from app.config import project_path
 from app.db import get_db
 from app.matching.scorer import reasons_from_json, score_job_detail
-from app.models import JobStatus, User
+from app.models import JobListing, JobStatus, ListingVisibility, User
 from app.services import (
     add_pasted_job_for_user,
     get_user_job_card_by_public_id,
@@ -23,7 +23,7 @@ from app.services import (
     rescore_user_jobs,
     sync_public_jobs,
 )
-from app.tailor.generator import generate_resume_files, list_resume_files
+from app.generator import generate_resume_files, list_resume_files
 from app.accounts import (
     apply_profile_from_user,
     can_open_listing,
@@ -33,8 +33,6 @@ from app.accounts import (
     free_unlocked_listing_ids,
     get_active_profile,
     has_full_job_access,
-    listing_board_is_clear,
-    listing_is_free_openable,
     llm_creds_for_user,
     load_apply_draft_db,
     load_user_profile_dict,
@@ -167,17 +165,41 @@ def jobs_board(
     full_access = has_full_job_access(db, user)
     unlocked_ids = set() if full_access else free_unlocked_listing_ids(db, user)
     free_remaining = 0 if full_access else free_opens_remaining(db, user)
-    job_rows = [
-        {
-            "card": card,
-            # Unopened free rows stay blurred; opens are claimed on detail view.
-            "blurred": not (full_access or listing_board_is_clear(db, user, int(card.id))),
-            "openable": full_access
-            or listing_is_free_openable(db, user, int(card.id)),
-            "unlocked": full_access or int(card.id) in unlocked_ids,
-        }
-        for card in page_cards
-    ]
+
+    # Batch-load all listings for the page to avoid N+1 queries.
+    listing_ids = [int(card.id) for card in page_cards]
+    listings = (
+        db.query(JobListing)
+        .filter(JobListing.id.in_(listing_ids))
+        .all()
+        if listing_ids
+        else []
+    )
+    listing_map = {l.id: l for l in listings}
+
+    job_rows = []
+    for card in page_cards:
+        lid = int(card.id)
+        listing = listing_map.get(lid)
+        is_private_own = (
+            listing is not None
+            and listing.visibility == ListingVisibility.PRIVATE.value
+            and listing.owner_user_id == user.id
+        )
+        blurred = not (full_access or is_private_own or lid in unlocked_ids)
+        openable = full_access or lid in unlocked_ids or (
+            listing is not None
+            and listing.visibility == ListingVisibility.PUBLIC.value
+            and len(unlocked_ids) < FREE_CLEAR_MATCHES
+        )
+        job_rows.append(
+            {
+                "card": card,
+                "blurred": blurred,
+                "openable": openable,
+                "unlocked": full_access or lid in unlocked_ids,
+            }
+        )
 
     ai_ok, ai_reason = can_use_ai(db, user)
     suggest_min = max(0, int(threshold) - 10)
@@ -200,11 +222,29 @@ def jobs_board(
         "suggest_qs": _jobs_query_string(status="", min_score=suggest_min, q=q_norm),
     }
 
-    locked_count = (
-        0
-        if full_access
-        else sum(1 for c in matched if not listing_board_is_clear(db, user, int(c.id)))
-    )
+    # Compute locked_count from pre-loaded data — no extra queries needed.
+    if full_access:
+        locked_count = 0
+    else:
+        all_matched_ids = [int(c.id) for c in matched]
+        all_listings = (
+            db.query(JobListing)
+            .filter(JobListing.id.in_(all_matched_ids))
+            .all()
+            if all_matched_ids
+            else []
+        )
+        all_listing_map = {l.id: l for l in all_listings}
+        locked_count = sum(
+            1
+            for lid in all_matched_ids
+            if lid not in unlocked_ids
+            and not (
+                all_listing_map.get(lid) is not None
+                and all_listing_map[lid].visibility == ListingVisibility.PRIVATE.value
+                and all_listing_map[lid].owner_user_id == user.id
+            )
+        )
     free_used = 0 if full_access else len(unlocked_ids)
 
     db.commit()  # persist any newly filled ListingMatchScore rows

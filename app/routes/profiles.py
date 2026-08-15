@@ -12,15 +12,15 @@ from app.accounts.profile import (
     archive_profile,
     create_profile,
     get_active_profile,
-    get_profile_billing,
     list_user_profiles,
     rename_profile,
     switch_active_profile,
 )
+from app.accounts.bootstrap import ensure_profile_billing
 from app.billing import PAID_PLANS
 from app.config import project_path
 from app.db import get_db
-from app.models import User
+from app.models import ProfileBilling, User
 from app.web_helpers import flash_redirect, require_user, template_ctx
 
 router = APIRouter(tags=["profiles"])
@@ -38,9 +38,23 @@ def profiles_page(
     ensure_account(db, user)
     active = get_active_profile(db, user)
     profiles = list_user_profiles(db, user)
+
+    # Batch-load all billing records to avoid N+1 queries.
+    profile_ids = [p.id for p in profiles]
+    billing_rows = (
+        db.query(ProfileBilling)
+        .filter(ProfileBilling.profile_id.in_(profile_ids))
+        .all()
+        if profile_ids
+        else []
+    )
+    billing_map = {b.profile_id: b for b in billing_rows}
+
     rows = []
     for p in profiles:
-        billing = get_profile_billing(db, user, p)
+        billing = billing_map.get(p.id)
+        if billing is None:
+            billing = ensure_profile_billing(db, user, p)
         status = (billing.subscription_status or "").lower()
         paid_active = billing.plan in PAID_PLANS and status in _ACTIVE_SUB
         rows.append(

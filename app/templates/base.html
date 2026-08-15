@@ -16,7 +16,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,500;0,9..144,650;1,9..144,500&family=Source+Sans+3:wght@400;550;650&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/static/styles.css?v=20260813a" />
+  <link rel="stylesheet" href="/static/styles.css?v=20260815a" />
 </head>
 <body class="{% block body_class %}{% endblock %}">
   <div id="working" class="working-banner" aria-live="polite">
@@ -52,8 +52,8 @@
             </div>
           </details>
           {% endif %}
-          <a href="/billing">Billing</a>
-          {% if profile_ready %}<a href="/settings">Settings</a>{% else %}<a href="/onboarding">Onboarding</a>{% endif %}
+          <a href="/billing"{% if request.url.path.startswith("/billing") %} aria-current="page"{% endif %}>Billing</a>
+          {% if profile_ready %}<a href="/settings"{% if request.url.path.startswith("/settings") %} aria-current="page"{% endif %}>Settings</a>{% else %}<a href="/onboarding">Onboarding</a>{% endif %}
           {% if is_admin %}<a href="/admin">Admin</a>{% endif %}
           <form action="/logout" method="post" class="nav-logout">
             <button class="btn btn-ghost" type="submit">Log out</button>

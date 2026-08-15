@@ -115,11 +115,6 @@ def has_target_stack_signal(text: str) -> bool:
     )
 
 
-# Back-compat alias
-def has_typescript_signal(text: str) -> bool:
-    return has_target_stack_signal(text)
-
-
 def has_title_include(title: str) -> bool:
     t = _norm(title)
     return any(re.search(p, t) for p in TITLE_INCLUDE)
@@ -130,23 +125,14 @@ def has_strong_title_signal(title: str) -> bool:
     return any(re.search(p, t) for p in STRONG_TITLE)
 
 
-def should_ingest_title(title: str, extra_excludes: list[str] | None = None) -> bool:
+def should_ingest_title(title: str) -> bool:
     """Catalogue ingest is role-agnostic; only drop empty titles."""
-    del extra_excludes  # kept for call-site back-compat
     return bool((title or "").strip())
 
 
-def should_ingest_job(
-    title: str,
-    description: str = "",
-    extra_excludes: list[str] | None = None,
-    *,
-    require_typescript: bool = False,
-    require_target_stack: bool | None = None,
-) -> bool:
+def should_ingest_job(title: str) -> bool:
     """Accept any job with a title — personal ranking happens later, not at ingest."""
-    del description, require_typescript, require_target_stack
-    return should_ingest_title(title, extra_excludes)
+    return should_ingest_title(title)
 
 
 def skill_in_text(skill: str, text: str) -> bool:

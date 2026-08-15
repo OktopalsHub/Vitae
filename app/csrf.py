@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hmac
+import logging
 import secrets
 from collections.abc import Callable
 from urllib.parse import parse_qs
@@ -11,6 +12,8 @@ from starlette.datastructures import UploadFile
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import PlainTextResponse, Response
+
+logger = logging.getLogger(__name__)
 
 CSRF_COOKIE = "vitae_csrf"
 CSRF_FORM_FIELD = "csrf_token"
@@ -123,7 +126,8 @@ class CSRFMiddleware(BaseHTTPMiddleware):
                     return {"type": "http.request", "body": body, "more_body": False}
 
                 request = Request(request.scope, receive2)
-            except Exception:  # noqa: BLE001
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("CSRF form token parse failed: %s", exc)
                 form_token = ""
 
         submitted = header_token or form_token

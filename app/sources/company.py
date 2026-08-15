@@ -69,7 +69,8 @@ async def fetch_yc(
                         continue
                     text = html_lib.unescape(page.text)
                     postings = extract_json_array_after(text, '"jobPostings":') or []
-                except Exception:
+                except Exception as exc:
+                    logger.debug("YC company page %s failed: %s", slug, exc)
                     continue
                 one_liner = str(company.get("one_liner") or company.get("oneLiner") or "")
                 for item in postings:
@@ -449,13 +450,15 @@ async def fetch_bruntwork(
         try:
             resp = await client.get(search_url)
             resp.raise_for_status()
-        except Exception:
+        except Exception as exc:
+            logger.warning("BruntWork search failed: %s", exc)
             return []
         for ext, link_title, url in _bruntwork_job_links(resp.text, max_results):
             try:
                 detail = await client.get(url)
                 detail.raise_for_status()
-            except Exception:
+            except Exception as exc:
+                logger.debug("BruntWork detail fetch failed for %s: %s", url, exc)
                 continue
             parsed = _parse_bruntwork_detail(detail.text)
             title = parsed.get("title") or link_title or "Untitled"

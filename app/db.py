@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from collections.abc import Generator
 from typing import Any
 
@@ -8,6 +9,8 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.config import database_url, ensure_dirs
 from app.models import Base
+
+logger = logging.getLogger(__name__)
 
 ensure_dirs()
 
@@ -156,7 +159,8 @@ def _migration_applied(conn: Any, key: str) -> bool:
             text("SELECT 1 FROM schema_meta WHERE key = :k"), {"k": key}
         ).fetchone()
         return row is not None
-    except Exception:
+    except Exception as exc:
+        logger.debug("Could not check migration %s: %s", key, exc)
         return False
 
 
@@ -171,8 +175,8 @@ def _record_migration(conn: Any, key: str) -> None:
             ),
             {"k": key},
         )
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.warning("Could not record migration %s: %s", key, exc)
 
 
 def _backfill_user_roles() -> None:

@@ -144,10 +144,6 @@ class Profile(Base):
     )
 
 
-# Back-compat alias while call sites migrate to Profile / get_active_profile.
-UserProfile = Profile
-
-
 class UserJob(Base):
     """Thin ranking/status overlay scoped to a profile (and owning user)."""
 
@@ -250,10 +246,6 @@ class ProfileBilling(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
     )
-
-
-# Legacy name — prefer ProfileBilling. Kept for import shims during migration.
-UserBilling = ProfileBilling
 
 
 @dataclass

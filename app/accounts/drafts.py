@@ -10,11 +10,7 @@ from app.models import ApplyDraft, JobListing, ListingVisibility, User
 
 
 def _assert_listing_accessible(db: Session, user: User, listing_id: int) -> None:
-    """Raise PermissionError if the user cannot access this listing.
-
-    Guards draft read/write against IDOR: a user must not be able to
-    read or modify another user's private draft simply by guessing a listing_id.
-    """
+    """Raise PermissionError if the user cannot access this listing."""
     listing = db.get(JobListing, listing_id)
     if listing is None:
         raise PermissionError("Listing not found")
@@ -23,20 +19,6 @@ def _assert_listing_accessible(db: Session, user: User, listing_id: int) -> None
             raise PermissionError("Access denied")
     elif listing.visibility != ListingVisibility.PUBLIC.value:
         raise PermissionError("Access denied")
-
-
-def _import_legacy_file_draft(user_id: str, listing_id: int) -> dict[str, Any]:
-    """One-time read of legacy JSON drafts; never writes files back."""
-    from app.apply_assist import load_job_draft
-
-    data = load_job_draft(listing_id, user_id=user_id)
-    if not isinstance(data, dict):
-        return {}
-    cover = str(data.get("cover_blurb") or "").strip()
-    answers = data.get("answers") if isinstance(data.get("answers"), list) else []
-    if not cover and not answers:
-        return {}
-    return {"cover_blurb": cover, "answers": answers}
 
 
 def load_apply_draft_db(db: Session, user: User, listing_id: int) -> dict[str, Any]:
@@ -59,13 +41,6 @@ def load_apply_draft_db(db: Session, user: User, listing_id: int) -> dict[str, A
             "cover_blurb": row.cover_blurb or "",
             "answers": answers if isinstance(answers, list) else [],
         }
-
-    # Best-effort migrate from legacy per-user JSON file into DB.
-    legacy = _import_legacy_file_draft(str(user.id), listing_id)
-    if legacy:
-        save_apply_draft_db(db, user, listing_id, legacy)
-        db.flush()
-        return legacy
     return {}
 
 

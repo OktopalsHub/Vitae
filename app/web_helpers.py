@@ -9,7 +9,7 @@ from fastapi import Depends, Request, Response
 from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 
-from app.apply_assist import ensure_apply_copy
+from app.generator import ensure_apply_copy
 from app.auth import SESSION_MAX_AGE, get_jwt_strategy, optional_current_user
 from app.csrf import cookie_secure_flag, csrf_token_for_template
 from app.config import api_key_status, get_settings, site_base_url, uses_sqlite

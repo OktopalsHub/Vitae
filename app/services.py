@@ -249,10 +249,6 @@ def ensure_user_job(
     return row
 
 
-# Back-compat alias used in a few call sites
-ensure_user_job_for_listing = ensure_user_job
-
-
 def refresh_overlay_score(
     db: Session,
     user: User,
@@ -709,16 +705,6 @@ def _get_user_job_card_by_int_id(db: Session, user: User, listing_id: int) -> Jo
     return _card_for_visible_listing(db, user, listing)
 
 
-def get_user_job_card(db: Session, user: User, listing_id: int) -> JobCard | None:
-    """Deprecated alias kept for internal callers only.
-
-    External / route callers must use get_user_job_card_by_public_id instead.
-    This wrapper intentionally has the same behaviour but is not exported in
-    __all__ so linters catch accidental new call sites.
-    """
-    return _get_user_job_card_by_int_id(db, user, listing_id)
-
-
 def get_user_job_card_by_public_id(db: Session, user: User, public_id: str) -> JobCard | None:
     ref = (public_id or "").strip()
     if not ref or ref.isdigit():
@@ -750,11 +736,3 @@ def _card_for_visible_listing(
     overlay = ensure_user_job(db, user, listing, profile=profile, cfg=cfg)
     return job_card_from(listing, overlay, profile=profile, cfg=cfg)
 
-
-async def sync_jobs(db: Session) -> dict[str, Any]:
-    return await sync_public_jobs(db)
-
-
-def rescore_all_jobs(db: Session) -> int:
-    """Deprecated: platform-wide user×listing rescoring is intentionally gone."""
-    return 0

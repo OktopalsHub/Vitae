@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import re
 from typing import Any
 
@@ -11,6 +12,8 @@ from bs4 import BeautifulSoup
 
 from app.matching.filters import should_ingest_job
 from app.sources.base import RawJob
+
+logger = logging.getLogger(__name__)
 
 _BROWSER_HEADERS = {
     "User-Agent": (
@@ -62,16 +65,15 @@ def accept_job(
     *,
     require_typescript: bool = False,
 ) -> bool:
-    return should_ingest_job(
-        title,
-        description,
-        excludes,
-        require_typescript=require_typescript,
-    )
+    return should_ingest_job(title)
 
 
-def accept_title(title: str, excludes: list[str] | None = None, description: str = "") -> bool:
-    return accept_job(title, description, excludes)
+def accept_title(
+    title: str,
+    excludes: list[str] | None = None,
+    description: str = "",
+) -> bool:
+    return accept_job(title)
 
 
 def norm_key(text: str) -> str:
@@ -137,6 +139,7 @@ def extract_json_array_after(text: str, marker: str) -> list[Any] | None:
                 try:
                     parsed = json.loads(text[start : j + 1])
                     return parsed if isinstance(parsed, list) else None
-                except Exception:
+                except json.JSONDecodeError as exc:
+                    logger.debug("JSON array parse failed: %s", exc)
                     return None
     return None

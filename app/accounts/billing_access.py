@@ -95,11 +95,6 @@ def free_opens_remaining(db: Session, user: User) -> int:
     return max(0, FREE_CLEAR_MATCHES - len(free_unlocked_listing_ids(db, user)))
 
 
-def free_clear_listing_ids(db: Session, user: User) -> set[int]:
-    """Back-compat alias: listings already claimed under the free grant."""
-    return free_unlocked_listing_ids(db, user)
-
-
 def claim_free_listing_open(db: Session, user: User, listing_id: int) -> bool:
     """Claim one one-time free open. True if unlocked (already or newly claimed)."""
     ensure_account(db, user)

@@ -7,6 +7,7 @@ import pytest
 from app.sources import fetchers
 from app.sources import boards as fetchers_boards
 from app.sources import company as fetchers_company
+from app.sources import aggregators as fetchers_agg
 from app.sources.base import RawJob
 
 
@@ -27,8 +28,9 @@ class _FakeResponse:
 
 
 class _FakeAsyncClient:
-    def __init__(self, responses: dict[tuple[str, tuple[tuple[str, str], ...]], _FakeResponse]):
+    def __init__(self, responses: dict, post_responses: dict | None = None):
         self._responses = responses
+        self._post_responses = post_responses or {}
 
     async def __aenter__(self):
         return self
@@ -41,10 +43,112 @@ class _FakeAsyncClient:
             url,
             tuple(sorted((str(k), str(v)) for k, v in (params or {}).items())),
         )
-        if key not in self._responses:
-            raise AssertionError(f"Unexpected request: {key}")
-        return self._responses[key]
+        if key in self._responses:
+            return self._responses[key]
+        if url in self._responses:
+            return self._responses[url]
+        raise AssertionError(f"Unexpected GET request: {key}")
 
+    async def post(self, url: str, json=None, params=None):
+        key = (
+            url,
+            tuple(sorted((str(k), str(v)) for k, v in (params or {}).items())),
+        )
+        if key in self._post_responses:
+            return self._post_responses[key]
+        if url in self._post_responses:
+            return self._post_responses[url]
+        raise AssertionError(f"Unexpected POST request: {key}")
+
+
+# ---------------------------------------------------------------------------
+# Greenhouse
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_fetch_greenhouse_basic(monkeypatch):
+    payload = {
+        "jobs": [
+            {
+                "id": 1001,
+                "title": "Backend Engineer",
+                "content": "Build APIs with Python and FastAPI.",
+                "location": {"name": "Remote"},
+                "absolute_url": "https://boards.greenhouse.io/testco/jobs/1001",
+            }
+        ]
+    }
+    responses = {
+        ("https://boards-api.greenhouse.io/v1/boards/testco/jobs", (("content", "true"),)): _FakeResponse(json_data=payload),
+    }
+    monkeypatch.setattr(fetchers_boards.httpx, "AsyncClient", lambda *a, **kw: _FakeAsyncClient(responses))
+
+    jobs = await fetchers.fetch_greenhouse("testco")
+
+    assert len(jobs) == 1
+    assert jobs[0].source == "greenhouse"
+    assert jobs[0].external_id == "testco:1001"
+    assert jobs[0].title == "Backend Engineer"
+    assert jobs[0].company == "testco"
+    assert jobs[0].location == "Remote"
+
+
+@pytest.mark.asyncio
+async def test_fetch_greenhouse_returns_multiple(monkeypatch):
+    payload = {
+        "jobs": [
+            {"id": 1, "title": "Sales Rep", "content": "Sell stuff", "location": {"name": "NY"}},
+            {"id": 2, "title": "Backend Engineer", "content": "Build APIs", "location": {"name": "Remote"}},
+        ]
+    }
+    responses = {
+        ("https://boards-api.greenhouse.io/v1/boards/testco/jobs", (("content", "true"),)): _FakeResponse(json_data=payload),
+    }
+    monkeypatch.setattr(fetchers_boards.httpx, "AsyncClient", lambda *a, **kw: _FakeAsyncClient(responses))
+
+    jobs = await fetchers.fetch_greenhouse("testco")
+
+    assert len(jobs) == 2
+
+
+@pytest.mark.asyncio
+async def test_fetch_greenhouse_invalid_board():
+    jobs = await fetchers.fetch_greenhouse("../../../etc/passwd")
+    assert jobs == []
+
+
+# ---------------------------------------------------------------------------
+# Lever
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_fetch_lever_basic(monkeypatch):
+    payload = [
+        {
+            "id": "lev-1",
+            "text": "Senior Backend Engineer",
+            "descriptionPlain": "Design and build scalable systems.",
+            "additionalPlain": "Remote-friendly role.",
+            "categories": {"location": "Remote"},
+            "hostedUrl": "https://jobs.lever.co/testco/lev-1",
+        }
+    ]
+    responses = {
+        ("https://api.lever.co/v0/postings/testco", (("mode", "json"),)): _FakeResponse(json_data=payload),
+    }
+    monkeypatch.setattr(fetchers_boards.httpx, "AsyncClient", lambda *a, **kw: _FakeAsyncClient(responses))
+
+    jobs = await fetchers.fetch_lever("testco")
+
+    assert len(jobs) == 1
+    assert jobs[0].source == "lever"
+    assert jobs[0].title == "Senior Backend Engineer"
+    assert "Remote" in jobs[0].location
+
+
+# ---------------------------------------------------------------------------
+# Ashby
+# ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
 async def test_fetch_ashby_uses_public_job_board_api(monkeypatch):
@@ -78,11 +182,11 @@ async def test_fetch_ashby_uses_public_job_board_api(monkeypatch):
     }
     responses = {
         (
-                "https://api.ashbyhq.com/posting-api/job-board/Scale%20Army%20Careers",
-                (("includeCompensation", "true"),),
-            ): _FakeResponse(json_data=payload),
+            "https://api.ashbyhq.com/posting-api/job-board/Scale%20Army%20Careers",
+            (("includeCompensation", "true"),),
+        ): _FakeResponse(json_data=payload),
     }
-    monkeypatch.setattr(fetchers_boards.httpx, "AsyncClient", lambda *args, **kwargs: _FakeAsyncClient(responses))
+    monkeypatch.setattr(fetchers_boards.httpx, "AsyncClient", lambda *a, **kw: _FakeAsyncClient(responses))
 
     jobs = await fetchers.fetch_ashby("Scale Army Careers")
 
@@ -96,6 +200,10 @@ async def test_fetch_ashby_uses_public_job_board_api(monkeypatch):
     assert job.extra["employment_type"] == "FullTime"
     assert job.extra["department"] == "Engineering"
 
+
+# ---------------------------------------------------------------------------
+# BruntWork
+# ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
 async def test_fetch_bruntwork_scrapes_search_and_detail_pages(monkeypatch):
@@ -116,16 +224,10 @@ async def test_fetch_bruntwork_scrapes_search_and_detail_pages(monkeypatch):
     </main></body></html>
     """
     responses = {
-        (
-            "https://www.bruntworkcareers.co/search?priority=Normal",
-            (),
-        ): _FakeResponse(text=search_html),
-        (
-            "https://www.bruntworkcareers.co/jobs/12345",
-            (),
-        ): _FakeResponse(text=detail_html),
+        ("https://www.bruntworkcareers.co/search?priority=Normal", ()): _FakeResponse(text=search_html),
+        ("https://www.bruntworkcareers.co/jobs/12345", ()): _FakeResponse(text=detail_html),
     }
-    monkeypatch.setattr(fetchers_company.httpx, "AsyncClient", lambda *args, **kwargs: _FakeAsyncClient(responses))
+    monkeypatch.setattr(fetchers_company.httpx, "AsyncClient", lambda *a, **kw: _FakeAsyncClient(responses))
 
     jobs = await fetchers.fetch_bruntwork()
 
@@ -139,6 +241,159 @@ async def test_fetch_bruntwork_scrapes_search_and_detail_pages(monkeypatch):
     assert job.extra["category"] == "Engineering"
     assert job.extra["job_type"] == "Full Time (35 hours or more per week)"
 
+
+# ---------------------------------------------------------------------------
+# RemoteOK
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_fetch_remoteok_filters_by_title(monkeypatch):
+    payload = [
+        {"id": "r1", "position": "Backend Engineer", "company": "Acme", "location": "Remote", "tags": ["python", "api"]},
+        {"id": "r2", "position": "Marketing Manager", "company": "Biz", "location": "NYC", "tags": ["marketing"]},
+    ]
+    responses = {
+        ("https://remoteok.com/api", ()): _FakeResponse(json_data=payload),
+    }
+    monkeypatch.setattr(fetchers_agg.httpx, "AsyncClient", lambda *a, **kw: _FakeAsyncClient(responses))
+
+    jobs = await fetchers.fetch_remoteok()
+
+    assert len(jobs) == 1
+    assert jobs[0].title == "Backend Engineer"
+
+
+# ---------------------------------------------------------------------------
+# Remotive
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_fetch_remotive_basic(monkeypatch):
+    payload = {
+        "jobs": [
+            {"id": "rem-1", "title": "Full Stack Engineer", "company_name": "StartupCo", "candidate_required_location": "Remote", "description": "Build web apps"},
+        ]
+    }
+    responses = {
+        ("https://remotive.com/api/remote-jobs", (("category", "software-dev"),)): _FakeResponse(json_data=payload),
+    }
+    monkeypatch.setattr(fetchers_agg.httpx, "AsyncClient", lambda *a, **kw: _FakeAsyncClient(responses))
+
+    jobs = await fetchers.fetch_remotive()
+
+    assert len(jobs) == 1
+    assert jobs[0].source == "remotive"
+    assert jobs[0].company == "StartupCo"
+
+
+# ---------------------------------------------------------------------------
+# Arbeitnow
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_fetch_arbeitnow_basic(monkeypatch):
+    payload = {
+        "data": [
+            {"title": "Python Developer", "company_name": "CodeCo", "location": "Berlin", "url": "https://arbeitnow.com/job/1", "slug": "job-1"},
+        ]
+    }
+    responses = {
+        ("https://www.arbeitnow.com/api/job-board-api", ()): _FakeResponse(json_data=payload),
+    }
+    monkeypatch.setattr(fetchers_agg.httpx, "AsyncClient", lambda *a, **kw: _FakeAsyncClient(responses))
+
+    jobs = await fetchers.fetch_arbeitnow()
+
+    assert len(jobs) == 1
+    assert jobs[0].source == "arbeitnow"
+    assert jobs[0].company == "CodeCo"
+
+
+# ---------------------------------------------------------------------------
+# Jooble
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_fetch_jooble_basic(monkeypatch):
+    payload = {"jobs": [{"title": "Node.js Developer", "company": "TechCo", "location": "Remote", "id": "j1", "link": "https://jooble.org/j1"}]}
+    post_responses = {
+        ("https://jooble.org/api/test-key", ()): _FakeResponse(json_data=payload),
+    }
+    monkeypatch.setattr(fetchers_agg.httpx, "AsyncClient", lambda *a, **kw: _FakeAsyncClient({}, post_responses))
+
+    jobs = await fetchers.fetch_jooble("test-key", ["nodejs"])
+
+    assert len(jobs) == 1
+    assert jobs[0].source == "jooble"
+
+
+@pytest.mark.asyncio
+async def test_fetch_jooble_empty_key():
+    jobs = await fetchers.fetch_jooble("", ["nodejs"])
+    assert jobs == []
+
+
+# ---------------------------------------------------------------------------
+# Error handling — fetchers return [] on HTTP errors
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_fetch_greenhouse_returns_empty_on_error(monkeypatch):
+    responses = {
+        ("https://boards-api.greenhouse.io/v1/boards/testco/jobs", (("content", "true"),)): _FakeResponse(status_code=500),
+    }
+    monkeypatch.setattr(fetchers_boards.httpx, "AsyncClient", lambda *a, **kw: _FakeAsyncClient(responses))
+
+    jobs = await fetchers.fetch_greenhouse("testco")
+    assert jobs == []
+
+
+@pytest.mark.asyncio
+async def test_fetch_lever_returns_empty_on_error(monkeypatch):
+    responses = {
+        ("https://api.lever.co/v0/postings/testco", (("mode", "json"),)): _FakeResponse(status_code=500),
+    }
+    monkeypatch.setattr(fetchers_boards.httpx, "AsyncClient", lambda *a, **kw: _FakeAsyncClient(responses))
+
+    jobs = await fetchers.fetch_lever("testco")
+    assert jobs == []
+
+
+@pytest.mark.asyncio
+async def test_fetch_ashby_returns_empty_on_error(monkeypatch):
+    responses = {
+        ("https://api.ashbyhq.com/posting-api/job-board/test", (("includeCompensation", "true"),)): _FakeResponse(status_code=500),
+    }
+    monkeypatch.setattr(fetchers_boards.httpx, "AsyncClient", lambda *a, **kw: _FakeAsyncClient(responses))
+
+    jobs = await fetchers.fetch_ashby("test")
+    assert jobs == []
+
+
+# ---------------------------------------------------------------------------
+# Max results limit
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_fetch_greenhouse_respects_max_results(monkeypatch):
+    payload = {
+        "jobs": [
+            {"id": i, "title": f"Engineer {i}", "content": "Build stuff", "location": {"name": "Remote"}}
+            for i in range(10)
+        ]
+    }
+    responses = {
+        ("https://boards-api.greenhouse.io/v1/boards/testco/jobs", (("content", "true"),)): _FakeResponse(json_data=payload),
+    }
+    monkeypatch.setattr(fetchers_boards.httpx, "AsyncClient", lambda *a, **kw: _FakeAsyncClient(responses))
+
+    jobs = await fetchers.fetch_greenhouse("testco", max_results=3)
+    assert len(jobs) == 3
+
+
+# ---------------------------------------------------------------------------
+# iter_fetch_sources integration
+# ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
 async def test_iter_fetch_sources_includes_ashby_and_bruntwork(monkeypatch):

@@ -168,6 +168,24 @@ def update_apply_profile(
     earliest_start: str = Form(""),
 ):
     ensure_account(db, user)
+
+    # Validate and sanitize inputs.
+    full_name = full_name.strip()[:100]
+    email = email.strip()[:254]
+    phone = phone.strip()[:30]
+    linkedin = linkedin.strip()[:200]
+    github = github.strip()[:100]
+    location_preference = location_preference.strip()[:100]
+    website = website.strip()[:200]
+    note = note.strip()[:2000]
+    years_experience = years_experience.strip()[:20]
+    work_authorization = work_authorization.strip()[:100]
+    salary_expectation = salary_expectation.strip()[:100]
+    earliest_start = earliest_start.strip()[:50]
+
+    if email and "@" not in email:
+        return flash_redirect("/settings", "Invalid email format")
+
     up = get_active_profile(db, user)
     assert up
     up.full_name = full_name

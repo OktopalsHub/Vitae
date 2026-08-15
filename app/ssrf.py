@@ -10,11 +10,14 @@ resolved once pre-connection and then the OS resolves it again at connect time
 from __future__ import annotations
 
 import ipaddress
+import logging
 import socket
 from typing import Any
 from urllib.parse import urljoin, urlparse
 
 import httpx
+
+logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -54,8 +57,8 @@ def _ip_is_blocked(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
         try:
             if ip in net:
                 return True
-        except TypeError:
-            pass
+        except TypeError as exc:
+            logger.debug("IP range check failed for %s in %s: %s", ip, net, exc)
     return False
 
 
@@ -94,8 +97,8 @@ class _SSRFSafeTransport(httpx.AsyncHTTPTransport):
                         peer = transport_sock[0]
                         break
                 raw_stream = getattr(raw_stream, "_stream", None)
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("Could not read peer address from stream: %s", exc)
         if peer:
             _assert_ip_safe(peer)
         return response

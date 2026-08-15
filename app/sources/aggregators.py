@@ -42,7 +42,8 @@ async def fetch_adzuna(
                 resp = await client.get(url, params=params)
                 resp.raise_for_status()
                 data = resp.json()
-            except Exception:
+            except Exception as exc:
+                logger.warning("Adzuna fetch failed for query %r: %s", query, exc)
                 continue
             for item in data.get("results") or []:
                 title = item.get("title") or "Untitled"
@@ -85,7 +86,8 @@ async def fetch_remoteok(
             resp = await client.get("https://remoteok.com/api")
             resp.raise_for_status()
             data = resp.json()
-        except Exception:
+        except Exception as exc:
+            logger.warning("RemoteOK fetch failed: %s", exc)
             return []
     for item in data:
         if not isinstance(item, dict) or "id" not in item:
@@ -130,7 +132,8 @@ async def fetch_remotive(
             )
             resp.raise_for_status()
             data = resp.json()
-        except Exception:
+        except Exception as exc:
+            logger.warning("Remotive fetch failed: %s", exc)
             return []
     for item in data.get("jobs") or []:
         title = item.get("title") or ""
@@ -166,7 +169,8 @@ async def fetch_arbeitnow(
             resp = await client.get("https://www.arbeitnow.com/api/job-board-api")
             resp.raise_for_status()
             data = resp.json()
-        except Exception:
+        except Exception as exc:
+            logger.warning("Arbeitnow fetch failed: %s", exc)
             return []
     for item in data.get("data") or []:
         title = item.get("title") or ""
@@ -202,7 +206,8 @@ async def fetch_jobicy(
             resp = await client.get("https://jobicy.com/api/v2/remote-jobs", params=params)
             resp.raise_for_status()
             data = resp.json()
-        except Exception:
+        except Exception as exc:
+            logger.debug("Jobicy primary fetch failed (trying fallback): %s", exc)
             try:
                 resp = await client.get(
                     "https://jobicy.com/api/v2/remote-jobs",
@@ -210,7 +215,8 @@ async def fetch_jobicy(
                 )
                 resp.raise_for_status()
                 data = resp.json()
-            except Exception:
+            except Exception as exc2:
+                logger.warning("Jobicy fallback fetch failed: %s", exc2)
                 return []
     for item in data.get("jobs") or []:
         title = item.get("jobTitle") or ""
@@ -254,7 +260,8 @@ async def fetch_jooble(
                 resp = await client.post(url, json=payload)
                 resp.raise_for_status()
                 data = resp.json()
-            except Exception:
+            except Exception as exc:
+                logger.warning("Jooble fetch failed for query %r: %s", query, exc)
                 continue
             for item in data.get("jobs") or []:
                 title = item.get("title") or ""

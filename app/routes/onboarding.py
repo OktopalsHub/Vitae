@@ -209,27 +209,39 @@ async def onboarding_review_save(
         profile = {}
 
     if section == "basics":
-        up.full_name = full_name.strip()
-        up.email = email.strip()
-        up.phone = phone.strip()
-        up.linkedin = linkedin.strip()
-        up.github = github.strip()
-        up.website = website.strip()
-        up.location_preference = location_preference.strip()
-        up.years_experience = years_experience.strip() or up.years_experience
+        full_name = full_name.strip()[:100]
+        email = email.strip()[:254]
+        phone = phone.strip()[:30]
+        linkedin = linkedin.strip()[:200]
+        github = github.strip()[:100]
+        website = website.strip()[:200]
+        location_preference = location_preference.strip()[:100]
+        years_experience = years_experience.strip()[:20]
+
+        if email and "@" not in email:
+            return flash_redirect("/onboarding/review/basics", "Invalid email format")
+
+        up.full_name = full_name
+        up.email = email
+        up.phone = phone
+        up.linkedin = linkedin
+        up.github = github
+        up.website = website
+        up.location_preference = location_preference
+        up.years_experience = years_experience or up.years_experience
         profile["name"] = up.full_name
-        if full_name.strip():
+        if full_name:
             sync_user = db.get(User, user.id)
             if sync_user:
-                sync_user.full_name = full_name.strip()
+                sync_user.full_name = full_name
                 db.add(sync_user)
     elif section == "summary":
-        profile["summary"] = summary.strip()
+        profile["summary"] = summary.strip()[:5000]
     elif section == "skills":
-        skills_list = [s.strip() for s in skills.replace("\n", ",").split(",") if s.strip()]
+        skills_list = [s.strip()[:50] for s in skills.replace("\n", ",").split(",") if s.strip()][:50]
         profile["skills"] = skills_list
     elif section == "experience":
-        lines = [ln.strip() for ln in experience.splitlines() if ln.strip()]
+        lines = [ln.strip()[:500] for ln in experience.splitlines() if ln.strip()][:100]
         profile["experience_raw"] = lines
     elif section == "projects":
         lines = [ln.strip() for ln in projects.splitlines() if ln.strip()]

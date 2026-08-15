@@ -1,24 +1,21 @@
-"""apply_assist_payload and ensure_user_apply_copy."""
+"""Orchestration for apply-assist copy generation.
+
+Coordinates cover letter + application answer generation.
+Handles stale copy detection and single-answer rewrites.
+"""
 
 from __future__ import annotations
 
-import json
 import logging
 from pathlib import Path
 from typing import Any
 
-from app.config import project_path
 from app.llm import LLMCreds
-from app.apply_assist.prompts import (
+from app.generator.apply_copy import (
     generate_application_answers,
     generate_cover_blurb,
     rewrite_single_answer,
     template_application_answers,
-)
-from app.apply_assist.legacy_draft import (
-    APPLY_PROFILE_PATH,
-    load_job_draft,
-    save_job_draft,
 )
 
 JobLike = Any
@@ -32,9 +29,11 @@ _STALE_COPY_MARKERS = (
     "this work maps to",
 )
 
+_APPLY_PROFILE_PATH = Path(__file__).resolve().parents[2] / "data" / "profile" / "apply_profile.json"
+
 
 def default_apply_profile() -> dict[str, Any]:
-    """Legacy shared-profile defaults for single-user smoke scripts only."""
+    """Default apply profile structure."""
     return {
         "full_name": "",
         "email": "",
@@ -46,8 +45,8 @@ def default_apply_profile() -> dict[str, Any]:
         "note": "",
         "years_experience": "",
         "work_authorization": "",
-        "salary_expectation": "Open to discussion based on role and location",
-        "earliest_start": "2–4 weeks",
+        "salary_expectation": "",
+        "earliest_start": "",
         "career_facts": [],
         "experience_highlights": [],
         "skills": [],
@@ -56,10 +55,11 @@ def default_apply_profile() -> dict[str, Any]:
 
 
 def load_apply_profile() -> dict[str, Any]:
+    import json
     base = default_apply_profile()
-    if APPLY_PROFILE_PATH.exists():
+    if _APPLY_PROFILE_PATH.exists():
         try:
-            stored = json.loads(APPLY_PROFILE_PATH.read_text(encoding="utf-8"))
+            stored = json.loads(_APPLY_PROFILE_PATH.read_text(encoding="utf-8"))
             if isinstance(stored, dict):
                 base.update({k: v for k, v in stored.items() if v is not None})
         except json.JSONDecodeError:
@@ -68,7 +68,7 @@ def load_apply_profile() -> dict[str, Any]:
 
 
 def apply_assist_payload(job: JobLike, apply_profile: dict[str, Any] | None = None) -> dict[str, Any]:
-    from app.tailor.generator import assert_download_under_user, list_resume_files
+    from app.generator.cv_tailor import assert_download_under_user, list_resume_files
 
     profile = apply_profile if apply_profile is not None else {
         "full_name": "",

@@ -6,12 +6,12 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from app.apply_assist import (
+from app.generator.apply_copy import (
     template_about_yourself,
     template_application_answers,
     template_cover_blurb,
 )
-from app.tailor.generator import _fallback_resume, build_tailored_content, generate_resume_files
+from app.generator.cv_tailor import _fallback_resume, build_tailored_content, generate_resume_files
 
 
 def test_fallback_resume_uses_only_profile_skills():
@@ -63,10 +63,10 @@ async def test_build_tailored_content_falls_back_when_llm_fails(tmp_path):
         output_dir=None,
     )
     with patch(
-        "app.tailor.generator.has_llm",
+        "app.generator.cv_tailor.has_llm",
         return_value=True,
     ), patch(
-        "app.tailor.generator._llm_complete",
+        "app.generator.cv_tailor._llm_complete",
         new=AsyncMock(side_effect=RuntimeError("boom")),
     ):
         data, used_fallback = await build_tailored_content(job, profile=profile, creds=None)
@@ -77,7 +77,7 @@ async def test_build_tailored_content_falls_back_when_llm_fails(tmp_path):
 
 @pytest.mark.asyncio
 async def test_generate_resume_files_writes_pdf_docx(tmp_path, monkeypatch):
-    from app.tailor import generator as gen
+    from app.generator import cv_tailor as gen
 
     out_root = tmp_path / "out"
     out_root.mkdir()
@@ -106,7 +106,7 @@ async def test_generate_resume_files_writes_pdf_docx(tmp_path, monkeypatch):
         description="Python APIs",
         output_dir=None,
     )
-    with patch("app.tailor.generator.has_llm", return_value=False):
+    with patch("app.generator.cv_tailor.has_llm", return_value=False):
         out, used_fallback = await generate_resume_files(
             job, profile=profile, display_name="Ada Lovelace"
         )

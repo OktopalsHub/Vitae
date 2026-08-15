@@ -83,8 +83,8 @@ def run_user_rank_refresh_once() -> dict[str, int]:
             errors_n += 1
             try:
                 db.rollback()
-            except Exception:
-                pass
+            except Exception as rollback_exc:
+                logger.warning("Rollback failed for user %s: %s", uid, rollback_exc)
         finally:
             db.close()
 

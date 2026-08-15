@@ -12,8 +12,8 @@
     {% endif %}
     <form method="post" action="/login" class="form-grid" style="margin-top:var(--s4)">
       <input type="hidden" name="next" value="{{ next or '/jobs' }}" />
-      <label style="grid-column:1/-1">Email<input type="email" name="email" required autocomplete="email" /></label>
-      <label style="grid-column:1/-1">Password<input type="password" name="password" required autocomplete="current-password" /></label>
+      <label style="grid-column:1/-1">Email<input type="email" name="email" required autocomplete="email" placeholder="you@example.com" /></label>
+      <label style="grid-column:1/-1">Password<input type="password" name="password" required autocomplete="current-password" placeholder="Your password" /></label>
       <div><button class="btn btn-primary" type="submit">Sign in</button></div>
     </form>
     <p class="divider">Or continue with</p>

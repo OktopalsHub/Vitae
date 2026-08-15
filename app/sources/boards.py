@@ -35,7 +35,8 @@ async def fetch_greenhouse(
             resp = await client.get(url, params={"content": "true"})
             resp.raise_for_status()
             data = resp.json()
-        except Exception:
+        except Exception as exc:
+            logger.warning("Greenhouse fetch failed for %s: %s", board, exc)
             return []
     for item in data.get("jobs") or []:
         title = item.get("title") or ""
@@ -76,7 +77,8 @@ async def fetch_lever(
             resp = await client.get(url, params={"mode": "json"})
             resp.raise_for_status()
             data = resp.json()
-        except Exception:
+        except Exception as exc:
+            logger.warning("Lever fetch failed for %s: %s", site, exc)
             return []
     if not isinstance(data, list):
         return []
@@ -153,7 +155,8 @@ async def fetch_ashby(
             resp = await client.get(url, params={"includeCompensation": "true"})
             resp.raise_for_status()
             data = resp.json()
-        except Exception:
+        except Exception as exc:
+            logger.warning("Ashby fetch failed for %s: %s", board_name, exc)
             return []
     company = _ashby_company_name(board)
     for item in data.get("jobs") or []:
