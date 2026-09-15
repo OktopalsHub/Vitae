@@ -6,6 +6,7 @@ import pytest
 
 from app.sources import fetchers
 from app.sources import boards as fetchers_boards
+from app.sources import bruntwork as fetchers_bruntwork
 from app.sources import company as fetchers_company
 from app.sources import aggregators as fetchers_agg
 from app.sources.base import RawJob
@@ -227,7 +228,7 @@ async def test_fetch_bruntwork_scrapes_search_and_detail_pages(monkeypatch):
         ("https://www.bruntworkcareers.co/search?priority=Normal", ()): _FakeResponse(text=search_html),
         ("https://www.bruntworkcareers.co/jobs/12345", ()): _FakeResponse(text=detail_html),
     }
-    monkeypatch.setattr(fetchers_company.httpx, "AsyncClient", lambda *a, **kw: _FakeAsyncClient(responses))
+    monkeypatch.setattr(fetchers_bruntwork.httpx, "AsyncClient", lambda *a, **kw: _FakeAsyncClient(responses))
 
     jobs = await fetchers.fetch_bruntwork()
 

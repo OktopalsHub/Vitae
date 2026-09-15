@@ -140,13 +140,13 @@ async def generate_cover_blurb(
     prompt = (
         f"Write a short cover note (90-140 words) for a specific job application.\n\n"
         f"{ASD_STE100_RULES}\n\n"
-        "STRUCTURE (ASD-STE100):\n"
+        "STRUCTURE (short, direct, active):\n"
         "1) Who you are. One sentence. Name + years + one fact from the profile.\n"
         "2) What you have done. One or two sentences. One concrete fact from the profile.\n"
         "3) Why this company. One sentence. Reference something from the JD.\n"
         "4) Close. One sentence. Resume attached, available to discuss.\n\n"
         "RULES:\n"
-        "- Max 20 words per sentence. One idea per sentence.\n"
+        "- Keep sentences short and direct (aim for 8-20 words). One idea per sentence.\n"
         "- Active voice. Start with the subject.\n"
         "- Every claim MUST come from the profile below.\n"
         "- Do NOT use: passionate, results-driven, world-class, cutting-edge, seamless.\n"
@@ -188,7 +188,7 @@ async def generate_application_answers(
         "ANSWER RULES:\n"
         "- Every claim MUST come from the candidate profile below.\n"
         "- Every answer MUST be specific to this JD.\n"
-        "- Max 20 words per sentence. One idea per sentence. Active voice.\n"
+        "- Keep sentences short and direct (aim for 8-20 words). One idea per sentence. Active voice.\n"
         "- Do NOT use: passionate, results-driven, world-class, seamless.\n"
         "- Do NOT write: 'the JD focuses on...', 'matches work I already do'.\n"
         "- Write like a real person, not a template. Use natural phrasing.\n"
@@ -267,25 +267,25 @@ async def rewrite_single_answer(
     ql = question.lower()
 
     focus = (
-        "Rewrite this answer in ASD-STE100 voice.\n"
-        "Max 20 words per sentence. One idea per sentence. Active voice.\n"
+        "Rewrite this answer in a clear, natural voice.\n"
+        "Short, direct sentences. One idea per sentence. Active voice.\n"
         "Every claim must trace to the profile. Must be specific to THIS JD.\n"
         "Do NOT use: passionate, results-driven, world-class, seamless, robust.\n"
         "Write like a real person. Avoid template phrases.\n"
     )
     if "about yourself" in ql:
         focus = (
-            "Rewrite 'Tell me about yourself' in ASD-STE100 voice.\n"
+            "Rewrite 'Tell me about yourself' in a clear, natural voice.\n"
             "Use this structure (as natural prose, not labelled):\n"
             "PAST: What you have done. One or two facts from the profile.\n"
             "PRESENT: What you do now. Your current focus or role.\n"
             "FUTURE: Why this company. One sentence connecting to the JD.\n"
-            "Max 20 words per sentence. Active voice. No hype words.\n"
+            "Short, direct sentences. Active voice. No hype words.\n"
             "Do NOT start with 'I am a [title] with X years of experience'. Start with something specific you have built.\n"
         )
     elif any(k in ql for k in ("why this", "why do you want", "why our", "company")):
         focus = (
-            "Rewrite 'Why this role' in ASD-STE100 voice.\n"
+            "Rewrite 'Why this role' in a clear, natural voice.\n"
             "Name something specific from the JD (product, users, problem).\n"
             "Tie it to one real experience from the profile.\n"
             "Forbidden: 'JD focuses on', 'matches work I already do'.\n"
@@ -293,7 +293,7 @@ async def rewrite_single_answer(
         )
     elif any(k in ql for k in ("relevant experience", "makes you a fit", "why are you a fit", "why you")):
         focus = (
-            "Rewrite 'Relevant experience' in ASD-STE100 voice.\n"
+            "Rewrite 'Relevant experience' in a clear, natural voice.\n"
             "Map 2-3 JD needs to profile experience (employer + outcome).\n"
             "Must NOT be generic. Should only work for THIS company.\n"
             "Use specific numbers, tools, and outcomes from the profile.\n"

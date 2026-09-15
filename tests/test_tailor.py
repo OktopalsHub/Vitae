@@ -11,7 +11,8 @@ from app.generator.apply_copy import (
     template_application_answers,
     template_cover_blurb,
 )
-from app.generator.cv_tailor import _fallback_resume, build_tailored_content, generate_resume_files
+from app.generator.cv_helpers import fallback_resume as _fallback_resume
+from app.generator.cv_tailor import build_tailored_content, generate_resume_files
 
 
 def test_fallback_resume_uses_only_profile_skills():

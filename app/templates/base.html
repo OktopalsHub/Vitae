@@ -20,7 +20,7 @@
 </head>
 <body class="{% block body_class %}{% endblock %}">
   <div id="working" class="working-banner" aria-live="polite">
-    <div class="card">Working… please wait</div>
+    <div class="card">Working… please wait. AI tasks like CV generation can take up to a minute.</div>
   </div>
 
   <div class="toast-stack" id="toastStack" aria-live="polite"></div>
@@ -206,16 +206,38 @@
       }
 
       window.copyField = async function (btn, text) {
+        const value = text || "";
+        let copied = false;
         try {
-          await navigator.clipboard.writeText(text || "");
-          const old = btn.textContent;
-          btn.textContent = "Copied";
-          btn.classList.add("btn-ok");
-          window.showToast("Copied to clipboard", "success");
-          setTimeout(() => { btn.textContent = old; btn.classList.remove("btn-ok"); }, 1200);
-        } catch (e) {
-          alert("Copy failed. Select the text manually.");
+          if (navigator.clipboard && window.isSecureContext) {
+            await navigator.clipboard.writeText(value);
+            copied = true;
+          }
+        } catch (e) { /* fall through to legacy copy */ }
+        if (!copied) {
+          try {
+            const ta = document.createElement("textarea");
+            ta.value = value;
+            ta.setAttribute("readonly", "");
+            ta.style.position = "fixed";
+            ta.style.opacity = "0";
+            document.body.appendChild(ta);
+            ta.select();
+            copied = document.execCommand("copy");
+            ta.remove();
+          } catch (e) {
+            copied = false;
+          }
         }
+        if (!copied) {
+          window.showToast("Copy failed. Select the text manually.", "error");
+          return;
+        }
+        const old = btn.textContent;
+        btn.textContent = "Copied";
+        btn.classList.add("btn-ok");
+        window.showToast("Copied to clipboard", "success");
+        setTimeout(() => { btn.textContent = old; btn.classList.remove("btn-ok"); }, 1200);
       };
 
       // ---- inline form validation ----

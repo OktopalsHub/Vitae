@@ -34,13 +34,13 @@ def wrap_jd(description: str, max_chars: int = 10000) -> str:
 # ---------------------------------------------------------------------------
 
 ASD_STE100_RULES = """
-ASD-STE100 SIMPLIFIED TECHNICAL ENGLISH (required for all output):
+ASD-STE100 SIMPLIFIED PROFESSIONAL ENGLISH (required for all output):
 
 SENTENCE RULES:
-- Max 20 words per sentence. One idea per sentence.
+- Keep sentences short and direct. Aim for 8-20 words; one idea per sentence.
 - Use active voice. Start with the subject (I, We, The team).
-- One verb per sentence. Prefer present simple or past simple.
-- Use short, clear words. No jargon, no slang, no buzzwords.
+- Vary sentence length and openings so the text flows like a real person wrote it.
+- Use plain, clear words. No jargon, no slang, no buzzwords.
 
 ATS OPTIMIZATION:
 - Mirror exact keywords from the JD in context — do not stuff them artificially

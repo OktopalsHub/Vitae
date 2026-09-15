@@ -3,8 +3,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, File, Form, Request, UploadFile
-from fastapi.responses import HTMLResponse
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
+from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
@@ -30,6 +30,7 @@ from app.accounts.profile import get_profile_billing
 from app.llm_providers import PLATFORM_PROVIDERS
 from app.roles import is_admin
 from app.web_helpers import (
+    assert_download_under_user,
     flash_redirect,
     read_upload_limited,
     require_profile_ready,
@@ -148,6 +149,32 @@ async def upload_cv(
         "/onboarding/review/basics",
         "CV uploaded — review and confirm your sections.",
     )
+
+
+@router.get("/settings/download-cv")
+def download_original_cv(
+    db: Session = Depends(get_db),
+    user: User = Depends(require_profile_ready),
+):
+    """Serve the originally uploaded master CV for the active profile."""
+    up = get_active_profile(db, user)
+    if not up or not up.master_cv_path:
+        raise HTTPException(404, "No CV on file")
+    stored = Path(up.master_cv_path)
+    safe_name = stored.name
+    if safe_name.lower().endswith(".pdf"):
+        media = "application/pdf"
+    elif safe_name.lower().endswith(".docx"):
+        media = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    else:
+        raise HTTPException(404, "No CV on file")
+    try:
+        path = assert_download_under_user(user.id, str(stored.parent), safe_name)
+    except PermissionError:
+        raise HTTPException(404, "No CV on file") from None
+    if not path.exists() or not path.is_file():
+        raise HTTPException(404, "No CV on file")
+    return FileResponse(path, media_type=media, filename=safe_name)
 
 
 @router.post("/settings/apply-profile")

@@ -59,9 +59,9 @@ RESUME WRITING RULES:
 ASD-STE100 SIMPLIFIED TECHNICAL ENGLISH (required for all output):
 
 SENTENCE RULES:
-- Max 20 words per sentence. One idea per sentence.
+- Keep sentences short and direct. Aim for 8-20 words; one idea per sentence.
 - Use active voice. Start with the subject (I, We, The team).
-- One verb per sentence. Prefer present simple or past simple.
+- Vary sentence structure so bullets do not all read the same.
 - Use short, clear words. No jargon, no slang, no buzzwords.
 
 WORD RULES:

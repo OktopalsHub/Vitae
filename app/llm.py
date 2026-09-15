@@ -6,6 +6,11 @@ from app.config import get_settings
 from app.crypto import decrypt_secret
 from app.llm_providers import PLATFORM_PROVIDERS, ProviderSpec, get_provider
 
+# Bound every LLM call. Without this, provider SDK defaults are ~600s timeout
+# with 2 retries — one bad endpoint could stall a request for 30 minutes.
+LLM_TIMEOUT_SECONDS = 90.0
+LLM_MAX_RETRIES = 1
+
 # Gemini 2.0 Flash shut down 2026-06-01. Remap so stale .env / Cloud vars still work.
 _RETIRED_GEMINI_MODELS = {
     "gemini-2.0-flash": "gemini-2.5-flash",
@@ -154,6 +159,8 @@ async def _openai_compatible(
     client_kwargs: dict = {"api_key": c.api_key}
     if c.base_url:
         client_kwargs["base_url"] = c.base_url
+    client_kwargs["timeout"] = LLM_TIMEOUT_SECONDS
+    client_kwargs["max_retries"] = LLM_MAX_RETRIES
     client = AsyncOpenAI(**client_kwargs)
     messages = []
     if system:
@@ -180,7 +187,11 @@ async def _anthropic(
 ) -> str:
     import anthropic
 
-    client = anthropic.AsyncAnthropic(api_key=c.api_key)
+    client = anthropic.AsyncAnthropic(
+        api_key=c.api_key,
+        timeout=LLM_TIMEOUT_SECONDS,
+        max_retries=LLM_MAX_RETRIES,
+    )
     sys = system or ""
     if json_mode:
         sys = (
@@ -205,7 +216,11 @@ async def _gemini(
     from google import genai
     from google.genai import types
 
-    client = genai.Client(api_key=c.api_key)
+    client = genai.Client(
+        api_key=c.api_key,
+        # HttpOptions timeout is in milliseconds.
+        http_options=types.HttpOptions(timeout=int(LLM_TIMEOUT_SECONDS * 1000)),
+    )
     config_kwargs: dict = {
         "temperature": temperature,
         "max_output_tokens": max_tokens,

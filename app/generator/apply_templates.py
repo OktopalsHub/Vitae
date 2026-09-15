@@ -108,9 +108,9 @@ def _first_evidence(apply_profile: dict[str, Any]) -> str:
 
 
 def template_about_yourself(job: JobLike, apply_profile: dict[str, Any]) -> str:
-    """Past → Present → Future structure. ASD-STE100 voice."""
+    """Past → Present → Future structure. First person, natural prose."""
     name = candidate_name(apply_profile)
-    company = job.company or "this team"
+    company = job.company or "your team"
     title = job.title or "this role"
     years = (apply_profile.get("years_experience") or "").strip()
 
@@ -130,38 +130,44 @@ def template_about_yourself(job: JobLike, apply_profile: dict[str, Any]) -> str:
             parts.append(f if f.endswith((".", "!", "?")) else f"{f}.")
         evidence_text = " ".join(parts)
 
-    years_bit = f"{name} has {years} years of experience in production systems." if years else ""
-    past = years_bit or f"{name} has shipped production systems for several years."
+    if years:
+        past = f"I'm {name}. I've spent the last {years} years building and running production software."
+    else:
+        past = f"I'm {name}. I've spent the last several years building and running production software."
     if evidence_text:
-        past = f"{years_bit} {evidence_text}" if years_bit else evidence_text
-    past = past.strip()
+        past = f"{past} {evidence_text}"
 
-    present = f"{name} now builds and maintains production systems with real users."
+    present = "Right now my focus is designing, shipping, and maintaining systems that real users depend on."
 
     future = (
-        f"{name} wants to join {company} as {title}. "
-        f"{name} will bring the same approach to your team."
+        f"The {title} role at {company} is exactly the kind of work I do best, "
+        f"and I'd bring the same ownership to your team."
     )
 
     return f"{past} {present} {future}".replace("..", ".").strip()
 
 
 def template_cover_blurb(job: JobLike, apply_profile: dict[str, Any]) -> str:
-    """ASD-STE100 cover note. Short sentences. Active voice."""
+    """Cover note fallback. Short sentences, active voice, first person."""
     name = candidate_name(apply_profile)
     company = job.company or "your team"
     title = job.title or "this role"
     years = (apply_profile.get("years_experience") or "").strip()
-    years_bit = f"I have {years} years of experience." if years else ""
     evidence = _first_evidence(apply_profile)
-    evidence_bit = f" {evidence}" if evidence else ""
-    return (
-        f"I am {name}.{f' {years_bit}' if years_bit else ''}{evidence_bit}\n\n"
-        f"The {title} role at {company} fits this background. "
-        f"I build and own production systems from design through launch. "
-        f"My resume has more detail.\n\n"
-        f"I am available to discuss relevant examples."
+
+    intro = f"I'm {name}."
+    if years:
+        intro = f"I'm {name}, with {years} years of experience shipping production software."
+
+    body = (
+        f"The {title} opening at {company} lines up closely with what I do. "
+        "I take features from design through launch, then stay responsible for them in production."
     )
+    if evidence:
+        body = f"{body} {evidence}"
+
+    close = "My resume is attached with the detail. I'd welcome a conversation about the role."
+    return f"{intro}\n\n{body}\n\n{close}"
 
 
 def template_relevant_experience(job: JobLike, apply_profile: dict[str, Any]) -> str:
@@ -190,9 +196,10 @@ def template_relevant_experience(job: JobLike, apply_profile: dict[str, Any]) ->
         if not evidence.endswith("."):
             evidence += "."
     return (
-        f"The {title} role at {company} needs production-system experience. "
-        f"{evidence} "
-        f"I design, build, and maintain systems that ship to real users."
+        f"The {title} role at {company} calls for production-system experience, and that's "
+        f"what I do every day. {evidence} "
+        f"I've owned features end to end — from design through launch, and stayed "
+        f"responsible for them once real users were on them."
     )
 
 
@@ -215,9 +222,8 @@ def template_application_answers(job: JobLike, apply_profile: dict[str, Any]) ->
     evidence = _first_evidence(apply_profile)
     evidence_bit = f" {evidence}" if evidence else ""
     why = (
-        f"{company} builds a product that needs a {title}. "
-        f"{evidence_bit} "
-        f"This work fits what I do. I build and maintain production systems."
+        f"I want to work at {company} because the {title} role is a direct match for what I do.{evidence_bit} "
+        f"I build and maintain production systems, and that's exactly what this role needs."
     )
     return [
         {"question": "Tell us about yourself", "answer": template_about_yourself(job, apply_profile)},
