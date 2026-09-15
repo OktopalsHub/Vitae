@@ -30,10 +30,10 @@ from app.accounts.profile import get_profile_billing
 from app.llm_providers import PLATFORM_PROVIDERS
 from app.roles import is_admin
 from app.web_helpers import (
-    assert_download_under_user,
     flash_redirect,
     read_upload_limited,
     require_profile_ready,
+    resolve_original_cv,
     template_ctx,
     validate_upload_content,
     validate_upload_filename,
@@ -160,21 +160,11 @@ def download_original_cv(
     up = get_active_profile(db, user)
     if not up or not up.master_cv_path:
         raise HTTPException(404, "No CV on file")
-    stored = Path(up.master_cv_path)
-    safe_name = stored.name
-    if safe_name.lower().endswith(".pdf"):
-        media = "application/pdf"
-    elif safe_name.lower().endswith(".docx"):
-        media = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-    else:
-        raise HTTPException(404, "No CV on file")
     try:
-        path = assert_download_under_user(user.id, str(stored.parent), safe_name)
+        path, media = resolve_original_cv(user.id, up.master_cv_path)
     except PermissionError:
         raise HTTPException(404, "No CV on file") from None
-    if not path.exists() or not path.is_file():
-        raise HTTPException(404, "No CV on file")
-    return FileResponse(path, media_type=media, filename=safe_name)
+    return FileResponse(path, media_type=media, filename=path.name)
 
 
 @router.post("/settings/apply-profile")

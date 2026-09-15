@@ -301,6 +301,28 @@ def assert_download_under_user(user_id: uuid.UUID, output_dir: str, filename: st
     return path
 
 
+_CV_MEDIA_TYPES = {
+    ".pdf": "application/pdf",
+    ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+}
+
+
+def resolve_original_cv(user_id: uuid.UUID, master_cv_path: str | None) -> tuple[Path, str]:
+    """Resolve the stored master CV. Returns (path, media_type).
+
+    Raises PermissionError when the path is missing, has an unexpected
+    extension, escapes the user's data directory, or no longer exists.
+    """
+    stored = Path(master_cv_path or "")
+    media = _CV_MEDIA_TYPES.get(stored.suffix.lower())
+    if not media:
+        raise PermissionError("No CV on file")
+    path = assert_download_under_user(user_id, str(stored.parent), stored.name)
+    if not path.exists() or not path.is_file():
+        raise PermissionError("No CV on file")
+    return path, media
+
+
 def validate_upload_filename(filename: str | None) -> str:
     name = Path(filename or "").name
     lower = name.lower()

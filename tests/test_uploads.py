@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from app.web_helpers import (
@@ -68,3 +70,69 @@ def test_assert_download_under_user_blocks_traversal(tmp_path, monkeypatch):
 
     with pytest.raises(PermissionError):
         assert_download_under_user(uid, str(outside), "secret.pdf")
+
+
+# ---------------------------------------------------------------------------
+# Original CV download routes (Settings + Profiles)
+# ---------------------------------------------------------------------------
+
+def _plant_master_cv(db, user, profile) -> Path:
+    from app.accounts.paths import profile_data_dir
+
+    dest = profile_data_dir(user.id, profile.id) / "original-cv.pdf"
+    dest.write_bytes(b"%PDF-1.7 fake cv")
+    profile.master_cv_path = str(dest)
+    db.add(profile)
+    db.commit()
+    return dest
+
+
+def test_profile_download_cv_serves_original(client, confirmed_user, db_session):
+    from app.accounts import get_active_profile
+
+    user = confirmed_user["user"]
+    profile = get_active_profile(db_session, user)
+    dest = _plant_master_cv(db_session, user, profile)
+    try:
+        r = client.get(f"/profiles/{profile.id}/download-cv")
+        assert r.status_code == 200
+        assert r.headers["content-type"].startswith("application/pdf")
+        assert 'filename="original-cv.pdf"' in r.headers.get("content-disposition", "")
+        assert b"%PDF-1.7" in r.content
+
+        # Settings route still serves the active profile's original CV.
+        r2 = client.get("/settings/download-cv")
+        assert r2.status_code == 200
+        assert b"%PDF-1.7" in r2.content
+    finally:
+        dest.unlink(missing_ok=True)
+
+
+def test_profile_download_cv_404_when_no_cv(client, confirmed_user, db_session):
+    from app.accounts import get_active_profile
+
+    user = confirmed_user["user"]
+    profile = get_active_profile(db_session, user)
+    profile.master_cv_path = ""
+    db_session.add(profile)
+    db_session.commit()
+
+    r = client.get(f"/profiles/{profile.id}/download-cv")
+    assert r.status_code == 404
+    r2 = client.get("/settings/download-cv")
+    assert r2.status_code == 404
+
+
+def test_profile_download_cv_blocks_other_users(client, confirmed_user, db_session, register_user):
+    from app.accounts import get_active_profile
+
+    owner = confirmed_user["user"]
+    profile = get_active_profile(db_session, owner)
+    dest = _plant_master_cv(db_session, owner, profile)
+    try:
+        # Register a second user; the client session switches to them.
+        register_user(email=f"other-{uuid.uuid4().hex[:8]}@example.com")
+        r = client.get(f"/profiles/{profile.id}/download-cv")
+        assert r.status_code == 404
+    finally:
+        dest.unlink(missing_ok=True)

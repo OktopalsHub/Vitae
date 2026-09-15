@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Form, Request
-from fastapi.responses import HTMLResponse
+from fastapi import APIRouter, Depends, Form, HTTPException, Request
+from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
 from app.accounts import ensure_account
 from app.accounts.profile import (
+    _owned_alive_profile,
     archive_profile,
     create_profile,
     get_active_profile,
@@ -21,7 +22,7 @@ from app.billing import PAID_PLANS
 from app.config import project_path
 from app.db import get_db
 from app.models import ProfileBilling, User
-from app.web_helpers import flash_redirect, require_user, template_ctx
+from app.web_helpers import flash_redirect, require_user, resolve_original_cv, template_ctx
 
 router = APIRouter(tags=["profiles"])
 templates = Jinja2Templates(directory=str(project_path("app", "templates")))
@@ -67,6 +68,7 @@ def profiles_page(
                 "active": p.id == active.id,
                 "can_archive": len(profiles) > 1 and not paid_active,
                 "paid_active": paid_active,
+                "has_cv": bool(p.master_cv_path),
             }
         )
     return templates.TemplateResponse(
@@ -74,6 +76,24 @@ def profiles_page(
         "profiles.html",
         template_ctx(request, user, db, profiles=rows, active_profile=active),
     )
+
+
+@router.get("/profiles/{profile_id}/download-cv")
+def download_profile_cv(
+    profile_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_user),
+):
+    """Serve the originally uploaded master CV for one of the user's profiles."""
+    try:
+        profile = _owned_alive_profile(db, user, profile_id)
+    except ValueError:
+        raise HTTPException(404, "No CV on file") from None
+    try:
+        path, media = resolve_original_cv(user.id, profile.master_cv_path)
+    except PermissionError:
+        raise HTTPException(404, "No CV on file") from None
+    return FileResponse(path, media_type=media, filename=path.name)
 
 
 @router.post("/profiles/create")
