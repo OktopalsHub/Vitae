@@ -274,25 +274,16 @@ def load_user_profile_dict(db: Session, user: User) -> dict[str, Any]:
 
 
 def apply_profile_from_user(db: Session, user: User) -> dict[str, Any]:
+    """Return the normalized profile read model used by application workflows."""
     row = get_active_profile(db, user)
-    try:
-        profile = json.loads(row.profile_json or "{}")
-    except json.JSONDecodeError:
-        profile = {}
-    if not isinstance(profile, dict):
-        profile = {}
+    profile = load_user_profile_dict(db, user)
     try:
         career_facts = json.loads(row.career_facts_json or "[]")
     except json.JSONDecodeError:
         career_facts = []
     if not isinstance(career_facts, list):
         career_facts = []
-    experience_raw = profile.get("experience_raw") or []
-    if not isinstance(experience_raw, list):
-        experience_raw = []
-    skills = profile.get("skills") or (load_user_settings(db, user).get("profile_skills") or [])
-    if not isinstance(skills, list):
-        skills = []
+
     return {
         "full_name": row.full_name or user.full_name or profile.get("name") or "",
         "email": row.email or user.email or "",
@@ -307,11 +298,13 @@ def apply_profile_from_user(db: Session, user: User) -> dict[str, Any]:
         "earliest_start": row.earliest_start or "",
         "note": row.note or "",
         "summary": str(profile.get("summary") or "").strip(),
-        "skills": [str(s).strip() for s in skills if str(s).strip()],
+        "skills": [str(s).strip() for s in profile.get("skills") or [] if str(s).strip()],
         "career_facts": [str(f).strip() for f in career_facts if str(f).strip()],
         "experience_highlights": [
-            str(line).strip() for line in experience_raw[:40] if str(line).strip()
-        ],
+            str(line).strip()
+            for line in profile.get("experience_raw") or []
+            if str(line).strip()
+        ][:40],
     }
 
 
