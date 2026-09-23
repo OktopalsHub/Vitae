@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import secrets
@@ -43,6 +44,16 @@ from app.accounts import (
     load_user_settings,
 )
 from app.scheduler_state import mark_sync_finished, mark_sync_progress, mark_sync_started
+
+
+def _canonical_key(raw: RawJob) -> str:
+    """Stable cross-source identity without storing long or sensitive source URLs."""
+    url = (raw.url or "").split("?")[0].rstrip("/").lower()
+    if url:
+        value = f"url:{url}"
+    else:
+        value = f"job:{raw.title.strip().lower()}|{raw.company.strip().lower()}|{raw.location.strip().lower()}"
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
 
 def new_listing_public_id() -> str:
@@ -195,7 +206,7 @@ def upsert_public_listing(db: Session, raw: RawJob, *, source_key: str | None = 
         existing.posted_at = raw.posted_at or existing.posted_at
         existing.expires_at = raw.expires_at or existing.expires_at
         existing.source_updated_at = raw.source_updated_at or existing.source_updated_at
-        existing.canonical_key = existing.canonical_key or (raw.url or raw.external_id).split("?")[0].rstrip("/").lower()[:128]
+        existing.canonical_key = existing.canonical_key or _canonical_key(raw)
         existing.visibility = ListingVisibility.PUBLIC.value
         existing.is_active = True
         existing.closed_at = None
