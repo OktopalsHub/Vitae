@@ -3,6 +3,7 @@ from __future__ import annotations
 import uuid
 import asyncio
 import smtplib
+import logging
 from email.message import EmailMessage
 from collections.abc import AsyncGenerator
 
@@ -137,7 +138,7 @@ class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
         await self.user_db.update(updated, updates)
         return updated
 
-    async def send_verification_message(
+    async def on_after_request_verify(
         self,
         user: User,
         token: str,
@@ -176,6 +177,11 @@ class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
             db.commit()
         finally:
             db.close()
+
+        try:
+            await self.request_verify(user, request)
+        except Exception:
+            logging.getLogger(__name__).exception("Could not send verification email", extra={"user_id": str(user.id)})
 
 
 async def get_async_session() -> AsyncGenerator[AsyncSession, None]:
