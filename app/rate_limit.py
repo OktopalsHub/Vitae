@@ -7,17 +7,20 @@ import time
 from collections.abc import Callable
 from typing import Any
 
-from fastapi import Request
+from fastapi import Request\n\nfrom app.config import get_settings
 
 _lock = threading.Lock()
 # key -> (window_start_epoch, count)
 _buckets: dict[str, tuple[float, int]] = {}
 
-# Hardcoded buckets (requests per 60s). Not env-tunable.
-_LIMIT_AUTH = 10
-_LIMIT_PASTE = 20
-_LIMIT_AI = 15
-_LIMIT_DEFAULT = 60
+def _limits() -> dict[str, int]:
+    s = get_settings()
+    return {
+        "auth": max(1, int(s.rate_limit_auth)),
+        "paste": max(1, int(s.rate_limit_paste)),
+        "ai": max(1, int(s.rate_limit_ai)),
+        "default": max(1, int(s.rate_limit_default)),
+    }
 
 
 class RateLimitExceeded(Exception):
@@ -48,23 +51,41 @@ def check_rate_limit(key: str, *, limit: int, window_seconds: int = 60) -> None:
             raise RateLimitExceeded()
 
 
+def _trusted_proxy(peer: str) -> bool:
+    if not peer:
+        return False
+    try:
+        address = ipaddress.ip_address(peer)
+    except ValueError:
+        return False
+    for raw in (get_settings().trusted_proxy_ips or "").split(","):
+        value = raw.strip()
+        if not value:
+            continue
+        try:
+            if address in ipaddress.ip_network(value, strict=False):
+                return True
+        except ValueError:
+            continue
+    return False
+
+
 def client_ip(request: Request) -> str:
-    forwarded = (request.headers.get("x-forwarded-for") or "").split(",")[0].strip()
-    if forwarded:
-        return forwarded
-    if request.client and request.client.host:
-        return request.client.host
-    return "unknown"
+    peer = request.client.host if request.client and request.client.host else ""
+    if _trusted_proxy(peer):
+        forwarded = (request.headers.get("x-forwarded-for") or "").split(",")
+        for value in reversed(forwarded):
+            candidate = value.strip()
+            try:
+                ipaddress.ip_address(candidate)
+            except ValueError:
+                continue
+            return candidate
+    return peer or "unknown"
 
 
 def limit_for(scope: str) -> int:
-    if scope == "auth":
-        return _LIMIT_AUTH
-    if scope == "paste":
-        return _LIMIT_PASTE
-    if scope == "ai":
-        return _LIMIT_AI
-    return _LIMIT_DEFAULT
+    return _limits().get(scope, _limits()["default"])
 
 
 def enforce(
