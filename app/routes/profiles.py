@@ -24,6 +24,7 @@ from app.accounts.profile import (
 from app.accounts.bootstrap import ensure_profile_billing
 from app.billing import PAID_PLANS
 from app.profile.cv import list_resume_versions, register_cv_version
+from app.profile.experience import add_experience, delete_experience, list_experience, update_experience
 from app.profile.loader import contact_parts_from_profile, parse_cv_file
 from app.config import project_path
 from app.db import get_db
@@ -118,6 +119,113 @@ def download_profile_cv(
     return FileResponse(path, media_type=media, filename=path.name)
 
 
+
+
+@router.get("/profiles/{profile_id}/experience", response_class=HTMLResponse)
+def profile_experience_page(
+    profile_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_user),
+):
+    ensure_account(db, user)
+    try:
+        profile = _owned_alive_profile(db, user, profile_id)
+        experience = list_experience(db, user, profile_id)
+    except (ValueError, PermissionError):
+        raise HTTPException(404, "Profile not found") from None
+    return templates.TemplateResponse(
+        request,
+        "profile_experience.html",
+        template_ctx(
+            request,
+            user,
+            db,
+            profile=profile,
+            experience=experience,
+        ),
+    )
+
+
+@router.post("/profiles/{profile_id}/experience")
+def profile_experience_add(
+    profile_id: int,
+    position: str = Form(""),
+    company: str = Form(""),
+    location: str = Form(""),
+    start_date: str = Form(""),
+    end_date: str = Form(""),
+    description: str = Form(""),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_user),
+):
+    ensure_account(db, user)
+    try:
+        add_experience(
+            db, user, profile_id,
+            position=position,
+            company=company,
+            location=location,
+            start_date=start_date,
+            end_date=end_date,
+            description=description,
+        )
+        db.commit()
+    except (ValueError, PermissionError) as exc:
+        return flash_redirect(f"/profiles/{profile_id}/experience", str(exc))
+    return flash_redirect(f"/profiles/{profile_id}/experience", "Experience added.")
+
+
+@router.post("/profiles/{profile_id}/experience/{experience_id}/update")
+def profile_experience_update(
+    profile_id: int,
+    experience_id: int,
+    position: str = Form(""),
+    company: str = Form(""),
+    location: str = Form(""),
+    start_date: str = Form(""),
+    end_date: str = Form(""),
+    description: str = Form(""),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_user),
+):
+    ensure_account(db, user)
+    try:
+        item = db.get(__import__("app.models", fromlist=["ProfileExperience"]).ProfileExperience, experience_id)
+        if item is None or item.profile_id != profile_id:
+            raise ValueError("Experience not found.")
+        update_experience(
+            db, user, experience_id,
+            position=position,
+            company=company,
+            location=location,
+            start_date=start_date,
+            end_date=end_date,
+            description=description,
+        )
+        db.commit()
+    except (ValueError, PermissionError) as exc:
+        return flash_redirect(f"/profiles/{profile_id}/experience", str(exc))
+    return flash_redirect(f"/profiles/{profile_id}/experience", "Experience updated.")
+
+
+@router.post("/profiles/{profile_id}/experience/{experience_id}/delete")
+def profile_experience_delete(
+    profile_id: int,
+    experience_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_user),
+):
+    ensure_account(db, user)
+    try:
+        item = db.get(__import__("app.models", fromlist=["ProfileExperience"]).ProfileExperience, experience_id)
+        if item is None or item.profile_id != profile_id:
+            raise ValueError("Experience not found.")
+        delete_experience(db, user, experience_id)
+        db.commit()
+    except (ValueError, PermissionError) as exc:
+        return flash_redirect(f"/profiles/{profile_id}/experience", str(exc))
+    return flash_redirect(f"/profiles/{profile_id}/experience", "Experience removed.")
 
 @router.post("/profiles/{profile_id}/replace-cv")
 async def replace_profile_cv(
