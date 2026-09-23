@@ -60,7 +60,6 @@ class AuthApiRateLimitMiddleware(BaseHTTPMiddleware):
 async def lifespan(_app: FastAPI):
     ensure_dirs()
     assert_secure_settings()
-assert_database_migrated()
     assert_database_migrated()
     warn_site_settings()
     tasks = start_catalogue_sync_task()
