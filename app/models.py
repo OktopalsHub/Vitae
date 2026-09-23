@@ -248,6 +248,111 @@ class ProfileBilling(Base):
     )
 
 
+class ProfileExperience(Base):
+    __tablename__ = "profile_experiences"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    profile_id: Mapped[int] = mapped_column(Integer, ForeignKey("profiles.id", ondelete="cascade"), nullable=False, index=True)
+    position: Mapped[str] = mapped_column(String(255), default="")
+    company: Mapped[str] = mapped_column(String(255), default="")
+    location: Mapped[str] = mapped_column(String(255), default="")
+    start_date: Mapped[str] = mapped_column(String(64), default="")
+    end_date: Mapped[str] = mapped_column(String(64), default="")
+    description: Mapped[str] = mapped_column(Text, default="")
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class ProfileEducation(Base):
+    __tablename__ = "profile_education"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    profile_id: Mapped[int] = mapped_column(Integer, ForeignKey("profiles.id", ondelete="cascade"), nullable=False, index=True)
+    institution: Mapped[str] = mapped_column(String(255), default="")
+    degree: Mapped[str] = mapped_column(String(255), default="")
+    field_of_study: Mapped[str] = mapped_column(String(255), default="")
+    start_date: Mapped[str] = mapped_column(String(64), default="")
+    end_date: Mapped[str] = mapped_column(String(64), default="")
+    description: Mapped[str] = mapped_column(Text, default="")
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class ProfileSkill(Base):
+    __tablename__ = "profile_skills"
+    __table_args__ = (UniqueConstraint("profile_id", "name", name="uq_profile_skill"),)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    profile_id: Mapped[int] = mapped_column(Integer, ForeignKey("profiles.id", ondelete="cascade"), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    category: Mapped[str] = mapped_column(String(64), default="")
+    proficiency: Mapped[str] = mapped_column(String(64), default="")
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class ProfileProject(Base):
+    __tablename__ = "profile_projects"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    profile_id: Mapped[int] = mapped_column(Integer, ForeignKey("profiles.id", ondelete="cascade"), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(255), default="")
+    description: Mapped[str] = mapped_column(Text, default="")
+    url: Mapped[str] = mapped_column(String(1024), default="")
+    technologies: Mapped[str] = mapped_column(Text, default="[]")
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class ProfileCertification(Base):
+    __tablename__ = "profile_certifications"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    profile_id: Mapped[int] = mapped_column(Integer, ForeignKey("profiles.id", ondelete="cascade"), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(255), default="")
+    issuer: Mapped[str] = mapped_column(String(255), default="")
+    issue_date: Mapped[str] = mapped_column(String(64), default="")
+    expiry_date: Mapped[str] = mapped_column(String(64), default="")
+    credential_url: Mapped[str] = mapped_column(String(1024), default="")
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class ProfilePreference(Base):
+    __tablename__ = "profile_preferences"
+    profile_id: Mapped[int] = mapped_column(Integer, ForeignKey("profiles.id", ondelete="cascade"), primary_key=True)
+    preferred_locations: Mapped[str] = mapped_column(Text, default="[]")
+    remote_only: Mapped[bool] = mapped_column(Boolean, default=False)
+    employment_types: Mapped[str] = mapped_column(Text, default="[]")
+    target_titles: Mapped[str] = mapped_column(Text, default="[]")
+    min_salary: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    currency: Mapped[str] = mapped_column(String(16), default="")
+    work_authorization: Mapped[str] = mapped_column(String(512), default="")
+
+
+class Document(Base):
+    __tablename__ = "documents"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("users.id", ondelete="cascade"), nullable=False, index=True)
+    profile_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("profiles.id", ondelete="cascade"), nullable=True, index=True)
+    kind: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    storage_key: Mapped[str] = mapped_column(String(1024), nullable=False, unique=True)
+    original_filename: Mapped[str] = mapped_column(String(512), default="")
+    content_type: Mapped[str] = mapped_column(String(255), default="")
+    size_bytes: Mapped[int] = mapped_column(Integer, default=0)
+    checksum: Mapped[str] = mapped_column(String(128), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class ResumeVersion(Base):
+    __tablename__ = "resume_versions"
+    __table_args__ = (UniqueConstraint("profile_id", "version", name="uq_resume_version"),)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    profile_id: Mapped[int] = mapped_column(Integer, ForeignKey("profiles.id", ondelete="cascade"), nullable=False, index=True)
+    source_document_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("documents.id", ondelete="set null"), nullable=True)
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    extraction_version: Mapped[str] = mapped_column(String(64), default="")
+    status: Mapped[str] = mapped_column(String(32), default="active")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+
 @dataclass
 class JobCard:
     """Read model: catalogue listing + personal ranking/status (overlay optional)."""
