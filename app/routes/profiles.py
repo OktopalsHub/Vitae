@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import uuid
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse
@@ -134,7 +135,8 @@ async def replace_profile_cv(
     except (ValueError, PermissionError) as exc:
         return flash_redirect("/profiles", str(exc))
 
-    dest = profile_data_dir(user.id, profile.id) / name
+    dest = profile_data_dir(user.id, profile.id) / "resumes" / f"{uuid.uuid4().hex}-{name}"
+    dest.parent.mkdir(parents=True, exist_ok=True)
     dest.write_bytes(content)
     try:
         parsed = parse_cv_file(dest)
