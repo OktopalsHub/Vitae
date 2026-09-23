@@ -1,14 +1,12 @@
 from pathlib import Path
 
-from app.models import ResumeVersion
+from app.models import Profile, ResumeVersion, User
 from app.profile.cv import get_active_resume, list_resume_versions, register_cv_version
 
 
 def test_register_cv_version_archives_previous(db_session, confirmed_user, tmp_path: Path):
     user = confirmed_user["user"]
-    profile = db_session.query(type(user).active_profile.property.mapper.class_).get(
-        user.active_profile_id
-    )
+    profile = db_session.get(Profile, user.active_profile_id)
 
     first = tmp_path / "resume-v1.pdf"
     first.write_bytes(b"%PDF-1.4 first")
