@@ -10,6 +10,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
 from app.accounts import ensure_account
+from app.accounts.paths import profile_data_dir
 from app.accounts.profile import (
     _owned_alive_profile,
     archive_profile,
