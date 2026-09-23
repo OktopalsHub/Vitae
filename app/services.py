@@ -677,7 +677,6 @@ async def sync_public_jobs(db: Session) -> dict[str, Any]:
                     listing.location = raw.location or listing.location
                     listing.description = raw.description or listing.description
                     listing.salary = raw.salary or listing.salary
-                    listing.source_key = label
                     listing.normalized_location = raw.normalized_location or raw.location or listing.normalized_location
                     listing.employment_type = raw.employment_type or listing.employment_type
                     listing.remote_type = raw.remote_type or listing.remote_type
