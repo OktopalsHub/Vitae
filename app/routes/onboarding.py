@@ -107,19 +107,6 @@ def _sync_structured_profile(db: Session, profile_row, profile: dict) -> None:
                     sort_order=index,
                 ))
 
-    for index, name in enumerate([]):
-        value = str(name).strip()[:255]
-        if value:
-            db.add(ProfileSkill(profile_id=profile_row.id, name=value, sort_order=index))
-
-    for index, line in enumerate([]):
-        value = str(line).strip()
-        if value:
-            db.add(ProfileEducation(
-                profile_id=profile_row.id,
-                description=value[:10000],
-                sort_order=index,
-            ))
 
 @router.get("/onboarding", response_class=HTMLResponse)
 def onboarding_upload(
