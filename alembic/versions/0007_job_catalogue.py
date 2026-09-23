@@ -76,7 +76,7 @@ def upgrade() -> None:
     ]
     for name, col_type, default in additions:
         if name not in columns:
-            kwargs = {"nullable": True}
+            kwargs = {"nullable": default is None}
             if default is not None:
                 kwargs["server_default"] = default
             op.add_column("job_listings", sa.Column(name, col_type, **kwargs))
