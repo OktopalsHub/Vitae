@@ -68,35 +68,51 @@ def _prev_section(current: str) -> str:
 
 def _sync_structured_profile(db: Session, profile_row, profile: dict) -> None:
     """Project confirmed extraction into queryable normalized tables."""
-    for model in (ProfileSkill, ProfileExperience, ProfileProject, ProfileEducation):
-        db.query(model).filter(model.profile_id == profile_row.id).delete(
-            synchronize_session=False
-        )
+    # Only seed normalized records when this profile does not already have
+    # structured data. Manual edits made in the Phase 4 editor must survive
+    # later onboarding/profile confirmations.
+    if db.query(ProfileSkill).filter(ProfileSkill.profile_id == profile_row.id).count() == 0:
+        for index, name in enumerate(profile.get("skills") or []):
+            value = str(name).strip()[:255]
+            if value:
+                db.add(ProfileSkill(profile_id=profile_row.id, name=value, sort_order=index))
 
-    for index, name in enumerate(profile.get("skills") or []):
+    if db.query(ProfileExperience).filter(ProfileExperience.profile_id == profile_row.id).count() == 0:
+        for index, line in enumerate(profile.get("experience_raw") or []):
+            value = str(line).strip()
+            if value:
+                db.add(ProfileExperience(
+                    profile_id=profile_row.id,
+                    description=value[:10000],
+                    sort_order=index,
+                ))
+
+    if db.query(ProfileProject).filter(ProfileProject.profile_id == profile_row.id).count() == 0:
+        for index, line in enumerate(profile.get("projects_raw") or []):
+            value = str(line).strip()
+            if value:
+                db.add(ProfileProject(
+                    profile_id=profile_row.id,
+                    description=value[:10000],
+                    sort_order=index,
+                ))
+
+    if db.query(ProfileEducation).filter(ProfileEducation.profile_id == profile_row.id).count() == 0:
+        for index, line in enumerate(profile.get("education_raw") or []):
+            value = str(line).strip()
+            if value:
+                db.add(ProfileEducation(
+                    profile_id=profile_row.id,
+                    description=value[:10000],
+                    sort_order=index,
+                ))
+
+    for index, name in enumerate([]):
         value = str(name).strip()[:255]
         if value:
             db.add(ProfileSkill(profile_id=profile_row.id, name=value, sort_order=index))
 
-    for index, line in enumerate(profile.get("experience_raw") or []):
-        value = str(line).strip()
-        if value:
-            db.add(ProfileExperience(
-                profile_id=profile_row.id,
-                description=value[:10000],
-                sort_order=index,
-            ))
-
-    for index, line in enumerate(profile.get("projects_raw") or []):
-        value = str(line).strip()
-        if value:
-            db.add(ProfileProject(
-                profile_id=profile_row.id,
-                description=value[:10000],
-                sort_order=index,
-            ))
-
-    for index, line in enumerate(profile.get("education_raw") or []):
+    for index, line in enumerate([]):
         value = str(line).strip()
         if value:
             db.add(ProfileEducation(
