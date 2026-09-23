@@ -25,6 +25,7 @@ def test_register_creates_basic_role(client, register_user):
         user = db.query(User).filter(User.email == "basic@example.com").one()
         assert user.role == UserRole.BASIC.value
         assert user.is_superuser is False
+        assert user.is_verified is False
         assert not is_admin(user)
     finally:
         db.close()
