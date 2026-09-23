@@ -23,7 +23,6 @@ from app.auth import (
 )
 from app.config import assert_secure_settings, ensure_dirs, get_settings, project_path, warn_site_settings
 from app.csrf import CSRFMiddleware, cookie_secure_flag
-from app.db import init_db
 from app.rate_limit import RateLimitExceeded, enforce
 from app.routes import admin, auth_pages, billing, jobs, onboarding, profiles, settings, site
 from app.scheduler import start_catalogue_sync_task
@@ -61,7 +60,6 @@ async def lifespan(_app: FastAPI):
     ensure_dirs()
     assert_secure_settings()
     warn_site_settings()
-    init_db()
     tasks = start_catalogue_sync_task()
     try:
         yield
@@ -77,7 +75,6 @@ async def lifespan(_app: FastAPI):
 
 ensure_dirs()
 assert_secure_settings()
-init_db()
 
 _settings = get_settings()
 _prod_like = (_settings.app_env or "").strip().lower() in {"production", "prod", "cloud"}
