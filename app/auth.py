@@ -86,7 +86,7 @@ class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
             password=password,
             is_active=True,
             is_superuser=False,
-            is_verified=False,
+            is_verified=True,
         )
         user = await super().create(safe_create, safe=True, request=request)
         full_name = (getattr(user_create, "full_name", None) or "")[:255]
@@ -96,7 +96,7 @@ class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
             {
                 "role": UserRole.BASIC.value,
                 "is_superuser": False,
-                "is_verified": False,
+                "is_verified": True,
                 "full_name": full_name,
             },
         )
