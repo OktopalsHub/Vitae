@@ -87,6 +87,18 @@ class JobListing(Base):
     url: Mapped[str] = mapped_column(String(1024), default="")
     description: Mapped[str] = mapped_column(Text, default="")
     salary: Mapped[str] = mapped_column(String(255), default="")
+    canonical_key: Mapped[str] = mapped_column(String(128), default="", index=True)
+    source_key: Mapped[str] = mapped_column(String(128), default="", index=True)
+    normalized_location: Mapped[str] = mapped_column(String(255), default="", index=True)
+    employment_type: Mapped[str] = mapped_column(String(64), default="", index=True)
+    remote_type: Mapped[str] = mapped_column(String(64), default="", index=True)
+    experience_level: Mapped[str] = mapped_column(String(64), default="", index=True)
+    salary_min: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    salary_max: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    salary_currency: Mapped[str] = mapped_column(String(16), default="")
+    posted_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True, index=True)
+    expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True, index=True)
+    source_updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     visibility: Mapped[str] = mapped_column(
         String(16), default=ListingVisibility.PUBLIC.value, index=True
     )
@@ -104,6 +116,47 @@ class JobListing(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
     )
+
+
+class JobSource(Base):
+    """Configured ingest source and its latest health state."""
+
+    __tablename__ = "job_sources"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    key: Mapped[str] = mapped_column(String(128), unique=True, nullable=False, index=True)
+    display_name: Mapped[str] = mapped_column(String(255), default="")
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    last_started_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    last_success_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    last_error_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    last_error: Mapped[str] = mapped_column(Text, default="")
+    consecutive_failures: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    last_fetched_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class JobSourceRecord(Base):
+    """Source-specific provenance for a canonical job listing."""
+
+    __tablename__ = "job_source_records"
+    __table_args__ = (
+        UniqueConstraint("source_id", "external_id", name="uq_job_source_external"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    source_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("job_sources.id", ondelete="cascade"), nullable=False, index=True
+    )
+    listing_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("job_listings.id", ondelete="cascade"), nullable=False, index=True
+    )
+    external_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    payload_json: Mapped[str] = mapped_column(Text, default="{}")
+    first_seen_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False, index=True)
 
 
 class Profile(Base):
