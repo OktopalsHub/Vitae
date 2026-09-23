@@ -55,7 +55,7 @@ class User(SQLAlchemyBaseUserTableUUID, Base):
     full_name: Mapped[str] = mapped_column(String(255), default="", nullable=False)
     role: Mapped[str] = mapped_column(String(32), default=UserRole.BASIC.value, index=True)
     # Points at profiles.id — each profile has its own subscription (ProfileBilling).
-    active_profile_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, index=True)
+    active_profile_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("profiles.id", ondelete="SET NULL"), nullable=True, index=True)
     oauth_accounts: Mapped[list["OAuthAccount"]] = relationship(
         "OAuthAccount", lazy="joined", cascade="all, delete-orphan"
     )
