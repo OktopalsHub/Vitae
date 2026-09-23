@@ -67,6 +67,11 @@ async def login_form(
             url=f"/login?error={quote('Invalid email or password')}&next={quote(dest)}",
             status_code=303,
         )
+    if not user.is_verified:
+        return RedirectResponse(
+            url=f"/login?error={quote('Please verify your email before signing in.')}&next={quote(dest)}",
+            status_code=303,
+        )
     login_response = await auth_backend.login(get_jwt_strategy(), user)
     return redirect_with_auth_cookie(dest, login_response)
 
@@ -107,8 +112,11 @@ async def register_form(
             ),
             status_code=303,
         )
-    login_response = await auth_backend.login(get_jwt_strategy(), user)
-    return redirect_with_auth_cookie("/onboarding", login_response)
+    return RedirectResponse(
+        url="/login?error="
+        + quote("Account created. Check your email to verify your account before signing in."),
+        status_code=303,
+    )
 
 
 @router.post("/logout")
