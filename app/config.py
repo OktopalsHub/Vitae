@@ -51,6 +51,13 @@ class Settings(BaseSettings):
     max_upload_bytes: int = 8 * 1024 * 1024
     # Separate from SECRET_KEY so JWT rotation does not invalidate BYOK ciphertext.
     fernet_secret_key: str = ""
+    # Only trust X-Forwarded-For when the immediate peer is one of these proxies.
+    # Comma-separated IPs/CIDRs. Leave empty when the app is directly exposed.
+    trusted_proxy_ips: str = ""
+    rate_limit_auth: int = 10
+    rate_limit_paste: int = 20
+    rate_limit_ai: int = 15
+    rate_limit_default: int = 60
 
     model_config = {"env_file": str(ROOT_DIR / ".env"), "extra": "ignore"}
 
