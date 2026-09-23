@@ -28,7 +28,7 @@ from app.profile.experience import add_experience, delete_experience, list_exper
 from app.profile.loader import contact_parts_from_profile, parse_cv_file
 from app.config import project_path
 from app.db import get_db
-from app.models import ProfileBilling, User
+from app.models import ProfileBilling, ProfileExperience, User
 from app.web_helpers import (
     flash_redirect,
     read_upload_limited,
@@ -191,7 +191,7 @@ def profile_experience_update(
 ):
     ensure_account(db, user)
     try:
-        item = db.get(__import__("app.models", fromlist=["ProfileExperience"]).ProfileExperience, experience_id)
+        item = db.get(ProfileExperience, experience_id)
         if item is None or item.profile_id != profile_id:
             raise ValueError("Experience not found.")
         update_experience(
