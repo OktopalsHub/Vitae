@@ -24,10 +24,17 @@ from app.accounts.profile import (
 from app.accounts.bootstrap import ensure_profile_billing
 from app.billing import PAID_PLANS
 from app.profile.cv import list_resume_versions, register_cv_version
+from app.profile.experience import (
+    create_experience,
+    delete_experience,
+    list_experience,
+    move_experience,
+    update_experience,
+)
 from app.profile.loader import contact_parts_from_profile, parse_cv_file
 from app.config import project_path
 from app.db import get_db
-from app.models import ProfileBilling, User
+from app.models import ProfileBilling, ProfileExperience, User
 from app.web_helpers import (
     flash_redirect,
     read_upload_limited,
@@ -86,6 +93,7 @@ def profiles_page(
             }
         )
     resume_versions = list_resume_versions(db, user, active.id)
+    experiences = list_experience(db, user, active.id)
     return templates.TemplateResponse(
         request,
         "profiles.html",
@@ -96,6 +104,7 @@ def profiles_page(
             profiles=rows,
             active_profile=active,
             resume_versions=resume_versions,
+            experiences=experiences,
         ),
     )
 
@@ -177,6 +186,105 @@ async def replace_profile_cv(
         f"/onboarding/review/basics",
         f"CV replaced. Version {list_resume_versions(db, user, profile.id)[0].version} is ready for review.",
     )
+
+
+
+@router.post("/profiles/{profile_id}/experience/create")
+def profiles_experience_create(
+    profile_id: int,
+    position: str = Form(""),
+    company: str = Form(""),
+    location: str = Form(""),
+    start_date: str = Form(""),
+    end_date: str = Form(""),
+    description: str = Form(""),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_user),
+):
+    ensure_account(db, user)
+    try:
+        create_experience(
+            db, user, profile_id,
+            position=position, company=company, location=location,
+            start_date=start_date, end_date=end_date, description=description,
+        )
+        db.commit()
+    except ValueError as exc:
+        db.rollback()
+        return flash_redirect("/profiles", str(exc))
+    return flash_redirect("/profiles", "Experience added.")
+
+
+@router.post("/profiles/{profile_id}/experience/{experience_id}/update")
+def profiles_experience_update(
+    profile_id: int,
+    experience_id: int,
+    position: str = Form(""),
+    company: str = Form(""),
+    location: str = Form(""),
+    start_date: str = Form(""),
+    end_date: str = Form(""),
+    description: str = Form(""),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_user),
+):
+    ensure_account(db, user)
+    try:
+        item = update_experience(
+            db, user, experience_id,
+            position=position, company=company, location=location,
+            start_date=start_date, end_date=end_date, description=description,
+        )
+        if item.profile_id != profile_id:
+            raise ValueError("Experience does not belong to this profile.")
+        db.commit()
+    except ValueError as exc:
+        db.rollback()
+        return flash_redirect("/profiles", str(exc))
+    return flash_redirect("/profiles", "Experience updated.")
+
+
+@router.post("/profiles/{profile_id}/experience/{experience_id}/delete")
+def profiles_experience_delete(
+    profile_id: int,
+    experience_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_user),
+):
+    ensure_account(db, user)
+    try:
+        item = db.get(ProfileExperience, experience_id)
+        if item is None or item.profile_id != profile_id:
+            raise ValueError("Experience not found")
+        delete_experience(db, user, experience_id)
+        db.commit()
+    except ValueError as exc:
+        db.rollback()
+        return flash_redirect("/profiles", str(exc))
+    return flash_redirect("/profiles", "Experience removed.")
+
+
+@router.post("/profiles/{profile_id}/experience/{experience_id}/move")
+def profiles_experience_move(
+    profile_id: int,
+    experience_id: int,
+    direction: str = Form(...),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_user),
+):
+    ensure_account(db, user)
+    if direction not in {"up", "down"}:
+        return flash_redirect("/profiles", "Invalid experience order.")
+    try:
+        item = db.get(__import__("app.models", fromlist=["ProfileExperience"]).ProfileExperience, experience_id)
+        if item is None or item.profile_id != profile_id:
+            raise ValueError("Experience not found")
+        move_experience(db, user, experience_id, direction)
+        db.commit()
+    except ValueError as exc:
+        db.rollback()
+        return flash_redirect("/profiles", str(exc))
+    return flash_redirect("/profiles", "Experience order updated.")
 
 
 @router.post("/profiles/create")
