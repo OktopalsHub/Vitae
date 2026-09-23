@@ -212,4 +212,4 @@ async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
 
 @app.get("/health")
 def health():
-    return {"ok": True}
+    return {"ok": True}app.include_router(fastapi_users.get_verify_router(UserRead), prefix="/auth", tags=["auth"])\n
