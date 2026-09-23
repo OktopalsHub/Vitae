@@ -105,31 +105,6 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.drop_table("job_source_records")
-    op.drop_table("job_sources")
-    for name in [
-        "ix_job_listings_expires_at",
-        "ix_job_listings_posted_at",
-        "ix_job_listings_experience_level",
-        "ix_job_listings_remote_type",
-        "ix_job_listings_employment_type",
-        "ix_job_listings_normalized_location",
-        "ix_job_listings_source_key",
-        "ix_job_listings_canonical_key",
-    ]:
-        op.drop_index(name, table_name="job_listings")
-    for name in [
-        "source_updated_at",
-        "expires_at",
-        "posted_at",
-        "salary_currency",
-        "salary_max",
-        "salary_min",
-        "experience_level",
-        "remote_type",
-        "employment_type",
-        "normalized_location",
-        "source_key",
-        "canonical_key",
-    ]:
-        op.drop_column("job_listings", name)
+    # This migration introduces durable provenance. Dropping it would destroy
+    # source history, so rollback must be an explicit data migration.
+    raise NotImplementedError("Phase 5 job catalogue migration is intentionally irreversible")
