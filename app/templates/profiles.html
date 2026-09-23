@@ -53,6 +53,66 @@
 </div>
 
 <div class="panel">
+  <h3 class="rule-title" style="margin-top:0">Work experience</h3>
+  <p class="meta">Keep each role as structured data. Vitae can reuse these roles when generating CVs and application answers.</p>
+
+  {% if experiences %}
+    {% for experience in experiences %}
+    <details class="experience-card" {% if loop.first %}open{% endif %}>
+      <summary>
+        <strong>{{ experience.position }}</strong> · {{ experience.company }}
+        {% if experience.start_date %} · {{ experience.start_date }}{% endif %}
+        {% if experience.end_date %}–{{ experience.end_date }}{% endif %}
+      </summary>
+      <form method="post" action="/profiles/{{ active_profile.id }}/experience/{{ experience.id }}/update" class="form-grid" style="margin-top:var(--s3)" data-busy>
+        <label>Position<input name="position" value="{{ experience.position }}" required maxlength="255" /></label>
+        <label>Company<input name="company" value="{{ experience.company }}" required maxlength="255" /></label>
+        <label>Location<input name="location" value="{{ experience.location }}" maxlength="255" /></label>
+        <label>Start date<input name="start_date" value="{{ experience.start_date }}" maxlength="64" placeholder="2023-01" /></label>
+        <label>End date<input name="end_date" value="{{ experience.end_date }}" maxlength="64" placeholder="Present" /></label>
+        <label style="grid-column:1/-1">Description / achievements
+          <textarea name="description" rows="6" maxlength="10000">{{ experience.description }}</textarea>
+        </label>
+        <div class="actions">
+          <button class="btn btn-primary" type="submit">Save changes</button>
+        </div>
+      </form>
+      <div class="actions" style="margin-top:var(--s2)">
+        <form method="post" action="/profiles/{{ active_profile.id }}/experience/{{ experience.id }}/move">
+          <input type="hidden" name="direction" value="up" />
+          <button class="btn" type="submit" {% if loop.first %}disabled{% endif %}>Move up</button>
+        </form>
+        <form method="post" action="/profiles/{{ active_profile.id }}/experience/{{ experience.id }}/move">
+          <input type="hidden" name="direction" value="down" />
+          <button class="btn" type="submit" {% if loop.last %}disabled{% endif %}>Move down</button>
+        </form>
+        <form method="post" action="/profiles/{{ active_profile.id }}/experience/{{ experience.id }}/delete" onsubmit="return confirm('Remove this experience?');">
+          <button class="btn btn-danger" type="submit">Remove</button>
+        </form>
+      </div>
+    </details>
+    {% endfor %}
+  {% else %}
+    <p class="meta">No work experience has been added yet.</p>
+  {% endif %}
+
+  <details style="margin-top:var(--s3)">
+    <summary><strong>Add work experience</strong></summary>
+    <form method="post" action="/profiles/{{ active_profile.id }}/experience/create" class="form-grid" style="margin-top:var(--s3)" data-busy>
+      <label>Position<input name="position" required maxlength="255" placeholder="Backend Engineer" /></label>
+      <label>Company<input name="company" required maxlength="255" placeholder="Company name" /></label>
+      <label>Location<input name="location" maxlength="255" placeholder="Remote" /></label>
+      <label>Start date<input name="start_date" maxlength="64" placeholder="2023-01" /></label>
+      <label>End date<input name="end_date" maxlength="64" placeholder="Present" /></label>
+      <label style="grid-column:1/-1">Description / achievements
+        <textarea name="description" rows="6" maxlength="10000" placeholder="What did you build, improve, or own?"></textarea>
+      </label>
+      <div><button class="btn btn-primary" type="submit">Add experience</button></div>
+    </form>
+  </details>
+</div>
+
+<div class="panel">
   <h3 class="rule-title" style="margin-top:0">Your profiles</h3>
   {% if not profiles %}
   <p class="meta">No tracks yet. Create one above.</p>
