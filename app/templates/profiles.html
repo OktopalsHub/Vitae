@@ -78,6 +78,7 @@
         {% if p.has_cv %}
         <a class="btn" href="/profiles/{{ p.id }}/download-cv" title="Download the original CV uploaded for this track">Download CV</a>
         {% endif %}
+        <a class="btn" href="/profiles/{{ p.id }}/experience">Experience</a>
         {% if not p.active %}
         <form method="post" action="/profiles/switch">
           <input type="hidden" name="profile_id" value="{{ p.id }}" />
