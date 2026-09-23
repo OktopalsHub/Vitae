@@ -19,7 +19,7 @@ from app.accounts.profile import (
 )
 from app.accounts.bootstrap import ensure_profile_billing
 from app.billing import PAID_PLANS
-from app.config import get_settings, project_path
+from app.config import project_path
 from app.db import get_db
 from app.models import ProfileBilling, User
 from app.profile.cv import merge_parsed_cv, store_cv
