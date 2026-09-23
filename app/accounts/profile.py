@@ -231,13 +231,24 @@ def load_user_profile_dict(db: Session, user: User) -> dict[str, Any]:
         .all()
         if item.name.strip()
     ]
-    experiences = [
-        item.description
-        for item in db.query(ProfileExperience)
+    experience_rows = (
+        db.query(ProfileExperience)
         .filter(ProfileExperience.profile_id == row.id)
         .order_by(ProfileExperience.sort_order.asc(), ProfileExperience.id.asc())
         .all()
-        if item.description.strip()
+    )
+    experiences = [
+        {
+            "id": item.id,
+            "position": item.position,
+            "company": item.company,
+            "location": item.location,
+            "start_date": item.start_date,
+            "end_date": item.end_date,
+            "description": item.description,
+        }
+        for item in experience_rows
+        if item.position.strip() or item.company.strip() or item.description.strip()
     ]
     projects = [
         item.description
@@ -267,7 +278,14 @@ def load_user_profile_dict(db: Session, user: User) -> dict[str, Any]:
     profile["name"] = row.full_name or user.full_name or profile.get("name") or ""
     profile["summary"] = str(profile.get("summary") or "").strip()
     profile["skills"] = skills
-    profile["experience_raw"] = experiences
+    profile["experience"] = experiences
+    profile["experience_raw"] = [
+        " — ".join(part for part in (
+            f"{item['position']} at {item['company']}".strip(" at"),
+            item["description"],
+        ) if part)
+        for item in experiences
+    ]
     profile["projects_raw"] = projects
     profile["education_raw"] = education
     return profile
