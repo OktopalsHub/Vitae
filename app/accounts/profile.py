@@ -11,7 +11,15 @@ from app.accounts.bootstrap import ensure_account, ensure_profile_billing
 from app.accounts.paths import profile_data_dir, user_data_dir
 from app.accounts.settings import load_user_settings
 from app.billing import PAID_PLANS
-from app.models import Profile, ProfileBilling, User
+from app.models import (
+    Profile,
+    ProfileBilling,
+    ProfileEducation,
+    ProfileExperience,
+    ProfileProject,
+    ProfileSkill,
+    User,
+)
 
 __all__ = [
     "user_data_dir",
@@ -202,16 +210,66 @@ def get_profile_billing(
 
 
 def load_user_profile_dict(db: Session, user: User) -> dict[str, Any]:
+    """Build the profile read model from normalized career tables.
+
+    Legacy profile_json is used only for fields that are not yet normalized.
+    This keeps existing callers compatible while the data model is migrated.
+    """
     row = get_active_profile(db, user)
     try:
-        profile = json.loads(row.profile_json or "{}")
+        legacy = json.loads(row.profile_json or "{}")
     except json.JSONDecodeError:
-        profile = {}
-    if not isinstance(profile, dict):
-        profile = {}
-    profile.setdefault("name", row.full_name or user.full_name or "")
-    profile.setdefault("skills", (load_user_settings(db, user).get("profile_skills") or []))
-    profile.setdefault("summary", "")
+        legacy = {}
+    if not isinstance(legacy, dict):
+        legacy = {}
+
+    skills = [
+        item.name
+        for item in db.query(ProfileSkill)
+        .filter(ProfileSkill.profile_id == row.id)
+        .order_by(ProfileSkill.sort_order.asc(), ProfileSkill.id.asc())
+        .all()
+        if item.name.strip()
+    ]
+    experiences = [
+        item.description
+        for item in db.query(ProfileExperience)
+        .filter(ProfileExperience.profile_id == row.id)
+        .order_by(ProfileExperience.sort_order.asc(), ProfileExperience.id.asc())
+        .all()
+        if item.description.strip()
+    ]
+    projects = [
+        item.description
+        for item in db.query(ProfileProject)
+        .filter(ProfileProject.profile_id == row.id)
+        .order_by(ProfileProject.sort_order.asc(), ProfileProject.id.asc())
+        .all()
+        if item.description.strip()
+    ]
+    education = [
+        item.description
+        for item in db.query(ProfileEducation)
+        .filter(ProfileEducation.profile_id == row.id)
+        .order_by(ProfileEducation.sort_order.asc(), ProfileEducation.id.asc())
+        .all()
+        if item.description.strip()
+    ]
+
+    if not skills:
+        skills = [
+            str(s).strip()
+            for s in (legacy.get("skills") or load_user_settings(db, user).get("profile_skills") or [])
+            if str(s).strip()
+        ]
+
+    profile = dict(legacy)
+    profile["name"] = row.full_name or user.full_name or profile.get("name") or ""
+    profile["summary"] = str(profile.get("summary") or "").strip()
+    profile["skills"] = skills
+    profile["experience_raw"] = experiences
+    profile["projects_raw"] = projects
+    profile["education_raw"] = education
     return profile
 
 
