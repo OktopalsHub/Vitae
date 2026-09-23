@@ -280,10 +280,18 @@ def load_user_profile_dict(db: Session, user: User) -> dict[str, Any]:
     profile["skills"] = skills
     profile["experience"] = experiences
     profile["experience_raw"] = [
-        " — ".join(part for part in (
-            f"{item['position']} at {item['company']}".strip(" at"),
-            item["description"],
-        ) if part)
+        " — ".join(
+            part
+            for part in (
+                (
+                    f"{item['position']} at {item['company']}"
+                    if item["position"] and item["company"]
+                    else item["position"] or item["company"]
+                ),
+                item["description"],
+            )
+            if part
+        )
         for item in experiences
     ]
     profile["projects_raw"] = projects
