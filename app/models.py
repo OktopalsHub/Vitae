@@ -341,15 +341,24 @@ class Document(Base):
 
 
 class ResumeVersion(Base):
+    """Immutable record of a CV upload plus the structured extraction produced from it."""
+
     __tablename__ = "resume_versions"
     __table_args__ = (UniqueConstraint("profile_id", "version", name="uq_resume_version"),)
+
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    profile_id: Mapped[int] = mapped_column(Integer, ForeignKey("profiles.id", ondelete="cascade"), nullable=False, index=True)
-    source_document_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("documents.id", ondelete="set null"), nullable=True)
+    profile_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("profiles.id", ondelete="cascade"), nullable=False, index=True
+    )
+    source_document_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("documents.id", ondelete="set null"), nullable=True
+    )
     version: Mapped[int] = mapped_column(Integer, nullable=False)
-    extraction_version: Mapped[str] = mapped_column(String(64), default="")
-    status: Mapped[str] = mapped_column(String(32), default="active")
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    parser_name: Mapped[str] = mapped_column(String(64), default="vitae-cv-parser")
+    extraction_version: Mapped[str] = mapped_column(String(64), default="1")
+    extracted_profile_json: Mapped[str] = mapped_column(Text, default="{}")
+    status: Mapped[str] = mapped_column(String(32), default="active", index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
 
 
 
