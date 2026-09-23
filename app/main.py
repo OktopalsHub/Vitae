@@ -23,6 +23,7 @@ from app.auth import (
 )
 from app.config import assert_secure_settings, ensure_dirs, get_settings, project_path, warn_site_settings
 from app.csrf import CSRFMiddleware, cookie_secure_flag
+from app.db import assert_database_migrated
 from app.rate_limit import RateLimitExceeded, enforce
 from app.routes import admin, auth_pages, billing, jobs, onboarding, profiles, settings, site
 from app.scheduler import start_catalogue_sync_task
@@ -59,6 +60,8 @@ class AuthApiRateLimitMiddleware(BaseHTTPMiddleware):
 async def lifespan(_app: FastAPI):
     ensure_dirs()
     assert_secure_settings()
+assert_database_migrated()
+    assert_database_migrated()
     warn_site_settings()
     tasks = start_catalogue_sync_task()
     try:
