@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import uuid
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -143,7 +144,8 @@ async def onboarding_upload_post(
     except ValueError as exc:
         return flash_redirect("/onboarding", str(exc))
 
-    dest = profile_data_dir(user.id, get_active_profile(db, user).id) / name
+    dest = profile_data_dir(user.id, get_active_profile(db, user).id) / "resumes" / f"{uuid.uuid4().hex}-{name}"
+    dest.parent.mkdir(parents=True, exist_ok=True)
     dest.write_bytes(content)
     try:
         parsed = parse_cv_file(dest)
