@@ -9,7 +9,14 @@ from sqlalchemy.orm import Session
 
 from app.config import project_path
 from app.db import get_db
-from app.models import User
+from app.models import (
+    ProfileEducation,
+    ProfileExperience,
+    ProfileProject,
+    ProfileSkill,
+    User,
+)
+from app.profile.cv import register_cv_version
 from app.profile.loader import contact_parts_from_profile, parse_cv_file
 from app.services import rescore_user_jobs_background
 from app.accounts import (
@@ -56,6 +63,46 @@ def _prev_section(current: str) -> str:
     idx = keys.index(current)
     return keys[max(idx - 1, 0)]
 
+
+
+def _sync_structured_profile(db: Session, profile_row, profile: dict) -> None:
+    """Project confirmed extraction into queryable normalized tables."""
+    for model in (ProfileSkill, ProfileExperience, ProfileProject, ProfileEducation):
+        db.query(model).filter(model.profile_id == profile_row.id).delete(
+            synchronize_session=False
+        )
+
+    for index, name in enumerate(profile.get("skills") or []):
+        value = str(name).strip()[:255]
+        if value:
+            db.add(ProfileSkill(profile_id=profile_row.id, name=value, sort_order=index))
+
+    for index, line in enumerate(profile.get("experience_raw") or []):
+        value = str(line).strip()
+        if value:
+            db.add(ProfileExperience(
+                profile_id=profile_row.id,
+                description=value[:10000],
+                sort_order=index,
+            ))
+
+    for index, line in enumerate(profile.get("projects_raw") or []):
+        value = str(line).strip()
+        if value:
+            db.add(ProfileProject(
+                profile_id=profile_row.id,
+                description=value[:10000],
+                sort_order=index,
+            ))
+
+    for index, line in enumerate(profile.get("education_raw") or []):
+        value = str(line).strip()
+        if value:
+            db.add(ProfileEducation(
+                profile_id=profile_row.id,
+                description=value[:10000],
+                sort_order=index,
+            ))
 
 @router.get("/onboarding", response_class=HTMLResponse)
 def onboarding_upload(
@@ -125,6 +172,19 @@ async def onboarding_upload_post(
         up.github = chips["github"]
     if chips.get("website"):
         up.website = chips["website"]
+    content_type = (
+        "application/pdf"
+        if name.lower().endswith(".pdf")
+        else "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    )
+    register_cv_version(
+        db,
+        user,
+        up,
+        dest,
+        parsed,
+        content_type=content_type,
+    )
     db.add(up)
     db.commit()
     return RedirectResponse("/onboarding/review/basics", status_code=303)
@@ -251,6 +311,7 @@ async def onboarding_review_save(
         profile["education_raw"] = lines
     elif section == "confirm":
         up.profile_json = json.dumps(profile)
+        _sync_structured_profile(db, up, profile)
         up.profile_confirmed = True
         db.add(up)
         db.commit()
