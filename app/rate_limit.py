@@ -34,9 +34,23 @@ def reset_rate_limits() -> None:
 
 
 def check_rate_limit(key: str, *, limit: int, window_seconds: int = 60) -> None:
-    """Increment the counter for ``key``; raise RateLimitExceeded when over limit."""
+    """Atomically enforce a fixed-window limit in Redis when configured."""
     if limit <= 0:
         return
+    client = _redis()
+    if client is not None:
+        try:
+            count = int(client.eval(_RATE_LIMIT_LUA, 1, "vitae:rl:" + key, window_seconds))
+            if count > limit:
+                raise RateLimitExceeded()
+            return
+        except RateLimitExceeded:
+            raise
+        except Exception:
+            # Redis is a control-plane dependency, but an outage must not take the
+            # application down. Fall back to the bounded local limiter for continuity.
+            pass
+
     now = time.time()
     with _lock:
         start, count = _buckets.get(key, (now, 0))
@@ -47,62 +61,3 @@ def check_rate_limit(key: str, *, limit: int, window_seconds: int = 60) -> None:
         if count > limit:
             raise RateLimitExceeded()
 
-
-def client_ip(request: Request) -> str:
-    forwarded = (request.headers.get("x-forwarded-for") or "").split(",")[0].strip()
-    if forwarded:
-        return forwarded
-    if request.client and request.client.host:
-        return request.client.host
-    return "unknown"
-
-
-def limit_for(scope: str) -> int:
-    if scope == "auth":
-        return _LIMIT_AUTH
-    if scope == "paste":
-        return _LIMIT_PASTE
-    if scope == "ai":
-        return _LIMIT_AI
-    return _LIMIT_DEFAULT
-
-
-def enforce(
-    scope: str,
-    *,
-    request: Request | None = None,
-    user_id: Any = None,
-    redirect_path: str = "/",
-    window_seconds: int = 60,
-) -> None:
-    """Enforce a limit keyed by user id when provided, otherwise client IP."""
-    limit = limit_for(scope)
-    if user_id is not None:
-        key = f"{scope}:user:{user_id}"
-    else:
-        ip = client_ip(request) if request is not None else "unknown"
-        key = f"{scope}:ip:{ip}"
-    try:
-        check_rate_limit(key, limit=limit, window_seconds=window_seconds)
-    except RateLimitExceeded as exc:
-        exc.path = redirect_path
-        raise
-
-
-def rate_limit(
-    scope: str,
-    *,
-    window_seconds: int = 60,
-    redirect_path: str = "/",
-) -> Callable[..., Any]:
-    """IP-based FastAPI dependency (auth forms / unauthenticated paths)."""
-
-    async def _dep(request: Request) -> None:
-        enforce(
-            scope,
-            request=request,
-            redirect_path=redirect_path,
-            window_seconds=window_seconds,
-        )
-
-    return _dep
