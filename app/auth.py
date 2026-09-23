@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import uuid
+import asyncio
+import smtplib
+from email.message import EmailMessage
 from collections.abc import AsyncGenerator
 
 from fastapi import Depends, Request
@@ -16,7 +19,7 @@ from httpx_oauth.clients.google import GoogleOAuth2
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from app.config import database_url, get_settings
+from app.config import database_url, get_settings, site_base_url
 from app.csrf import cookie_secure_flag
 from app.db import SessionLocal
 from app.models import OAuthAccount, User, UserRole
@@ -96,7 +99,7 @@ class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
             {
                 "role": UserRole.BASIC.value,
                 "is_superuser": False,
-                "is_verified": True,
+                "is_verified": False,
                 "full_name": full_name,
             },
         )
@@ -133,6 +136,35 @@ class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
         updated.is_verified = True
         await self.user_db.update(updated, updates)
         return updated
+
+    async def send_verification_message(
+        self,
+        user: User,
+        token: str,
+        request: Request | None = None,
+    ) -> None:
+        settings = get_settings()
+        if not settings.smtp_host:
+            raise RuntimeError("SMTP is not configured")
+        message = EmailMessage()
+        message["Subject"] = "Verify your Vitae account"
+        message["From"] = settings.smtp_from
+        message["To"] = user.email
+        verify_url = f"{site_base_url()}/auth/verify?token={token}"
+        message.set_content(
+            f"Verify your Vitae account by opening this link:\n\n{verify_url}\n\n"
+            "If you did not create this account, you can ignore this email."
+        )
+
+        def _send() -> None:
+            with smtplib.SMTP(settings.smtp_host, settings.smtp_port, timeout=10) as smtp:
+                if settings.smtp_starttls:
+                    smtp.starttls()
+                if settings.smtp_username:
+                    smtp.login(settings.smtp_username, settings.smtp_password)
+                smtp.send_message(message)
+
+        await asyncio.to_thread(_send)
 
     async def on_after_register(self, user: User, request: Request | None = None) -> None:
         from app.accounts import ensure_account
