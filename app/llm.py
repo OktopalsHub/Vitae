@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 import logging
 import time
@@ -197,7 +198,8 @@ async def llm_complete(
         else:
             result = await _openai_compatible(c, prompt, safe_system, json_mode, temperature)
     except Exception as exc:
-        _record_request(
+        await asyncio.to_thread(
+            _record_request,
             provider=c.provider,
             model=c.model,
             purpose=purpose,
@@ -210,7 +212,8 @@ async def llm_complete(
         )
         raise
 
-    _record_request(
+    await asyncio.to_thread(
+        _record_request,
         provider=c.provider,
         model=c.model,
         purpose=purpose,
