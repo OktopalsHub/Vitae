@@ -18,7 +18,7 @@ Files are stored under `data/objects`.
 
 ### Production
 
-Use an S3-compatible bucket. The production Docker image installs the optional `requirements-s3.txt` package set:
+Use an Cloudflare R2 bucket. The production Docker image installs the optional `requirements-s3.txt` package set:
 
 ```bash
 uv pip install -r requirements-s3.txt
@@ -30,10 +30,10 @@ Use an S3-compatible bucket:
 OBJECT_STORAGE_BACKEND=s3
 OBJECT_STORAGE_BUCKET=vitae-production
 OBJECT_STORAGE_REGION=...
-OBJECT_STORAGE_ENDPOINT=...
+OBJECT_STORAGE_ENDPOINT=https://<account-id>.r2.cloudflarestorage.com
 ```
 
-AWS credentials are read by boto3 using the normal AWS credential chain. For S3-compatible providers, set `OBJECT_STORAGE_ENDPOINT`.
+Cloudflare R2 uses the S3-compatible API. Set `OBJECT_STORAGE_ENDPOINT` to the R2 S3 API endpoint and provide `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` for the R2 API token.
 
 Generated resume artifacts store a logical object key in the database. Downloads first read the durable artifact record and fall back to the legacy local file path for older generations.
 
