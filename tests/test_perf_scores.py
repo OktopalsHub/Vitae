@@ -64,7 +64,7 @@ def test_warm_list_job_cards_skips_rescoring(confirmed_user):
         )
 
         # Warm browse must not call score_job for each listing again.
-        with patch("app.matching.score_cache.score_job") as mocked:
+        with patch("app.matching.score_cache.score_job_versioned") as mocked:
             mocked.side_effect = AssertionError("score_job should not run on warm cache")
             cards = list_job_cards(db, user, min_score=0)
             assert len(cards) >= 10
@@ -77,7 +77,7 @@ def test_jobs_board_second_load_ok(confirmed_user, client):
     _seed_listings(8, prefix="board")
     r1 = client.get("/jobs")
     assert r1.status_code == 200
-    with patch("app.matching.score_cache.score_job") as mocked:
+    with patch("app.matching.score_cache.score_job_versioned") as mocked:
         mocked.side_effect = AssertionError("warm /jobs must use cached scores")
         r2 = client.get("/jobs")
         assert r2.status_code == 200

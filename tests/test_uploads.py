@@ -125,14 +125,33 @@ def test_profile_download_cv_404_when_no_cv(client, confirmed_user, db_session):
 
 def test_profile_download_cv_blocks_other_users(client, confirmed_user, db_session, register_user):
     from app.accounts import get_active_profile
+    from app.models import User
 
     owner = confirmed_user["user"]
     profile = get_active_profile(db_session, owner)
     dest = _plant_master_cv(db_session, owner, profile)
     try:
-        # Register a second user; the client session switches to them.
-        register_user(email=f"other-{uuid.uuid4().hex[:8]}@example.com")
-        r = client.get(f"/profiles/{profile.id}/download-cv")
+        # Register a second user and verify them so the login actually switches
+        # the client away from the already-authenticated owner session.
+        other = register_user(email=f"other-{uuid.uuid4().hex[:8]}@example.com")
+        other_user = db_session.query(User).filter(User.email == other["email"]).one()
+        other_user.is_verified = True
+        db_session.add(other_user)
+        db_session.commit()
+
+        login_csrf = client.cookies.get("vitae_csrf") or ""
+        login = client.post(
+            "/login",
+            data={
+                "email": other["email"],
+                "password": other["password"],
+                "next": "/profiles",
+                "csrf_token": login_csrf,
+            },
+            follow_redirects=False,
+        )
+        assert login.status_code in {302, 303}
+        r = client.get(f"/profiles/{profile.id}/download-cv", follow_redirects=False)
         assert r.status_code == 404
     finally:
         dest.unlink(missing_ok=True)

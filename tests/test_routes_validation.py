@@ -149,7 +149,8 @@ def test_settings_apply_profile_rejects_invalid_email(confirmed_user, client):
     )
     assert r.status_code in {302, 303}
     location = r.headers.get("location", "")
-    assert "Invalid%20email" in location or "Invalid email" in location
+    from urllib.parse import unquote
+    assert "Invalid email" in unquote(location)
 
 
 def test_settings_apply_profile_saves_valid_data(confirmed_user, client):

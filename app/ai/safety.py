@@ -5,7 +5,7 @@ import re
 MAX_UNTRUSTED_TEXT = 12_000
 
 PROMPT_INJECTION_PATTERNS = (
-    re.compile(r"ignore (all|any|the) (previous|prior|above) instructions", re.I),
+    re.compile(r"ignore (?:all|any|the)?\s*(?:previous|prior|above) instructions", re.I),
     re.compile(r"disregard (all|any|the) (previous|prior|above) instructions", re.I),
     re.compile(r"system prompt", re.I),
     re.compile(r"developer message", re.I),

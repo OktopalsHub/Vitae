@@ -90,7 +90,7 @@ class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
             password=password,
             is_active=True,
             is_superuser=False,
-            is_verified=True,
+            is_verified=False,
         )
         user = await super().create(safe_create, safe=True, request=request)
         full_name = (getattr(user_create, "full_name", None) or "")[:255]
@@ -127,14 +127,12 @@ class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
         updates: dict = {
             "role": role,
             "is_superuser": False,
-            "is_verified": True,
         }
         if full_name is not None:
             updates["full_name"] = str(full_name)[:255]
             updated.full_name = updates["full_name"]
         updated.role = role
         updated.is_superuser = False
-        updated.is_verified = True
         await self.user_db.update(updated, updates)
         return updated
 
