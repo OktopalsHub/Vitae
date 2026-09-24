@@ -42,8 +42,10 @@ Production runs the application as separate services from one immutable image:
 - **Job discovery:** structured APIs, ATS boards, RSS sources, and optional Firecrawl open-web discovery.
 - **Migrations:** run explicitly with `alembic upgrade head` before deploying application services.
 - **Rate limiting:** local mode works for one process; set `RATE_LIMIT_BACKEND=redis` with `REDIS_URL` to share limits across web replicas.
+- **Artifact storage:** generated CVs use the storage abstraction; production should use S3-compatible object storage.
+- **Backups:** PostgreSQL backup and archive verification commands are provided under `scripts/`.
 
-See [Phase 16 production architecture](docs/phase-16-production-architecture.md) and [Phase 17 final cleanup](docs/phase-17-final-cleanup.md).
+See [Phase 16 production architecture](docs/phase-16-production-architecture.md), [Phase 17 final cleanup](docs/phase-17-final-cleanup.md), and [Phase 22 data durability](docs/phase-22-data-durability.md).
 
 ## Installation
 

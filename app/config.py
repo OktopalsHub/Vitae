@@ -23,6 +23,11 @@ class Settings(BaseSettings):
     rate_limit_backend: str = "local"
     forwarded_allow_ips: str = "127.0.0.1"
     metrics_token: str = ""
+    # Generated CV/object storage. Use s3 in production for durable artifacts.
+    object_storage_backend: str = "local"
+    object_storage_bucket: str = ""
+    object_storage_region: str = ""
+    object_storage_endpoint: str = ""
     openai_api_key: str = ""
     openai_model: str = "gpt-4o-mini"
     gemini_api_key: str = ""
