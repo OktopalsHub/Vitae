@@ -43,11 +43,11 @@
 
       <div class="actions">
         {% if p.has_cv %}
-        <a class="btn" href="/profiles/{{ p.id }}/download-cv">View current CV</a>
+        <a class="btn" href="/profiles/{{ p.id }}/download-cv">Download CV</a>
         <form method="post" action="/profiles/{{ p.id }}/replace-cv" enctype="multipart/form-data" data-busy>
           <label class="btn" style="cursor:pointer">
             Replace CV
-            <input type="file" name="file" accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document" required style="display:none" onchange="this.form.submit()" />
+            <input type="file" name="file" accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document" required class="visually-hidden-input" onchange="this.form.submit()" />
           </label>
         </form>
         {% endif %}
