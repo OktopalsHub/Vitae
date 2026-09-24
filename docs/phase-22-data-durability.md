@@ -18,6 +18,12 @@ Files are stored under `data/objects`.
 
 ### Production
 
+Use an S3-compatible bucket. The production Docker image installs the optional `requirements-s3.txt` package set:
+
+```bash
+uv pip install -r requirements-s3.txt
+```
+
 Use an S3-compatible bucket:
 
 ```env
