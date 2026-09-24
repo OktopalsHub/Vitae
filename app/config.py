@@ -16,6 +16,8 @@ class Settings(BaseSettings):
     adzuna_app_id: str = ""
     adzuna_app_key: str = ""
     jooble_api_key: str = ""
+    # Optional open-web discovery via Firecrawl. Disabled unless explicitly enabled in config.yaml.
+    firecrawl_api_key: str = ""
     openai_api_key: str = ""
     openai_model: str = "gpt-4o-mini"
     gemini_api_key: str = ""
@@ -180,6 +182,7 @@ def api_key_status() -> dict[str, bool]:
     status: dict[str, bool] = {
         "adzuna": bool(s.adzuna_app_id and s.adzuna_app_key),
         "jooble": bool(s.jooble_api_key),
+        "firecrawl": bool(s.firecrawl_api_key),
     }
     any_llm = False
     for spec in PLATFORM_PROVIDERS:

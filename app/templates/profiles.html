@@ -2,105 +2,135 @@
 {% block title %}Profiles · Vitae{% endblock %}
 {% block content %}
 <div class="page-head">
-  <p class="eyebrow">Profiles</p>
-  <h1>Career tracks</h1>
-  <p class="lede">Create a track per job search (Backend, Support, DevOps). Each has its own CV, matches, and billing.</p>
+  <p class="eyebrow">Career workspace</p>
+  <h1>Your career tracks</h1>
+  <p class="lede">Keep a focused CV, experience history, matches and plan for each type of role you want.</p>
 </div>
 
-<div class="panel" id="new">
-  <h3 class="rule-title" style="margin-top:0">New profile</h3>
-  <p class="meta">Starts on Free. Subscribe later if you want full unlock + AI on this track.</p>
-  <form method="post" action="/profiles/create" class="form-grid" data-busy>
-    <label>Label
-      <input name="label" placeholder="e.g. Backend Engineer" required maxlength="128" />
-    </label>
-    <div><button class="btn btn-primary" type="submit">Create profile</button></div>
-  </form>
-</div>
-
-<div class="panel">
-  <h3 class="rule-title" style="margin-top:0">Current CV</h3>
-  {% if active_profile %}
-  <p class="meta">
-    {% if resume_versions %}
-      Version {{ resume_versions[0].version }} · uploaded {{ resume_versions[0].created_at.strftime('%Y-%m-%d %H:%M') }}
-    {% else %}
-      No version history yet.
-    {% endif %}
-  </p>
-  <div class="actions">
-    {% if active_profile.master_cv_path %}
-      <a class="btn" href="/profiles/{{ active_profile.id }}/download-cv">View current CV</a>
-    {% endif %}
-  </div>
-  <form method="post" action="/profiles/{{ active_profile.id }}/replace-cv" enctype="multipart/form-data" class="form-grid" data-busy>
-    <label style="grid-column:1/-1">Replace CV
-      <input type="file" name="file" accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document" required />
-    </label>
-    <div><button class="btn btn-primary" type="submit">Upload new version</button></div>
-  </form>
-  {% if resume_versions %}
-  <details style="margin-top:var(--s3)">
-    <summary>CV history ({{ resume_versions|length }})</summary>
-    <ul class="meta">
-      {% for version in resume_versions %}
-      <li>v{{ version.version }} · {{ version.status }} · {{ version.created_at.strftime('%Y-%m-%d %H:%M') }}</li>
-      {% endfor %}
-    </ul>
-  </details>
-  {% endif %}
-  {% endif %}
-</div>
-
-<div class="panel">
-  <h3 class="rule-title" style="margin-top:0">Your profiles</h3>
-  {% if not profiles %}
-  <p class="meta">No tracks yet. Create one above.</p>
-  {% else %}
-  <div class="profile-list">
-    {% for p in profiles %}
-    <div class="profile-row{% if p.active %} is-active{% endif %}">
+<div class="profile-workspace">
+  <section class="panel profile-cv-card">
+    <div class="section-heading">
       <div>
-        <strong>{{ p.label }}</strong>
-        <p class="meta" style="margin:0.2rem 0 0">
-          {% if p.active %}Active · {% endif %}
-          {% if p.confirmed %}Ready{% else %}Needs onboarding{% endif %}
-          · plan <strong>{{ p.plan }}</strong>
-          {% if p.subscription_status %} · {{ p.subscription_status }}{% endif %}
-        </p>
-        <form method="post" action="/profiles/rename" class="profile-rename">
-          <input type="hidden" name="profile_id" value="{{ p.id }}" />
-          <input name="label" value="{{ p.label }}" maxlength="128" aria-label="Rename {{ p.label }}" />
-          <button class="btn" type="submit">Rename</button>
-        </form>
+        <p class="kicker">Active track</p>
+        <h2 class="section-title">{{ active_profile.label if active_profile else "Create your first track" }}</h2>
       </div>
-      <div class="actions">
-        {% if p.has_cv %}
-        <a class="btn" href="/profiles/{{ p.id }}/download-cv" title="Download the original CV uploaded for this track">Download CV</a>
+      {% if active_profile %}
+      <span class="badge ok">Active</span>
+      {% endif %}
+    </div>
+
+    {% if active_profile %}
+      <div class="cv-status">
+        <div class="cv-status__icon" aria-hidden="true">CV</div>
+        <div>
+          <strong>{% if resume_versions %}Version {{ resume_versions[0].version }} is current{% else %}No CV version yet{% endif %}</strong>
+          <p class="meta">
+            {% if resume_versions %}Uploaded {{ resume_versions[0].created_at.strftime('%Y-%m-%d %H:%M') }}{% else %}Upload a PDF or DOCX to build this track.{% endif %}
+          </p>
+        </div>
+        {% if active_profile.master_cv_path %}
+        <a class="btn" href="/profiles/{{ active_profile.id }}/download-cv">View CV</a>
         {% endif %}
+      </div>
+
+      <form method="post" action="/profiles/{{ active_profile.id }}/replace-cv" enctype="multipart/form-data" class="cv-upload" data-busy>
+        <label class="file-drop">
+          <span class="file-drop__title">Replace your CV</span>
+          <span class="file-drop__copy">PDF or DOCX. Your previous version stays in history.</span>
+          <input type="file" name="file" accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document" required />
+        </label>
+        <button class="btn btn-primary" type="submit">Upload new version</button>
+      </form>
+
+      {% if resume_versions %}
+      <details class="cv-history">
+        <summary>CV history · {{ resume_versions|length }} version{% if resume_versions|length != 1 %}s{% endif %}</summary>
+        <div class="history-list">
+          {% for version in resume_versions %}
+          <div class="history-item">
+            <span class="badge {% if loop.first %}ok{% endif %}">v{{ version.version }}</span>
+            <span>{{ version.status }}</span>
+            <span class="meta">{{ version.created_at.strftime('%Y-%m-%d %H:%M') }}</span>
+          </div>
+          {% endfor %}
+        </div>
+      </details>
+      {% endif %}
+    {% else %}
+      <div class="empty-state empty-state--compact">
+        <h3>No active career track</h3>
+        <p class="meta">Create one below, then upload the CV that matches the role you want.</p>
+      </div>
+    {% endif %}
+  </section>
+
+  <aside class="panel profile-create-card" id="new">
+    <p class="kicker">New track</p>
+    <h2 class="section-title">Start another search</h2>
+    <p class="meta">Use separate tracks for different career directions. Each track has its own matching context.</p>
+    <form method="post" action="/profiles/create" data-busy>
+      <label>Track name
+        <input name="label" placeholder="e.g. Backend Engineer" required maxlength="128" />
+      </label>
+      <button class="btn btn-primary" type="submit">Create track</button>
+    </form>
+  </aside>
+</div>
+
+<section class="panel">
+  <div class="section-heading">
+    <div>
+      <p class="kicker">All tracks</p>
+      <h2 class="section-title">Your profiles</h2>
+    </div>
+    <span class="meta">{{ profiles|length }} track{% if profiles|length != 1 %}s{% endif %}</span>
+  </div>
+
+  {% if not profiles %}
+  <div class="empty-state empty-state--compact">
+    <h3>Create your first track</h3>
+    <p class="meta">Start with the role you are applying for most often.</p>
+    <a class="btn btn-primary" href="#new">Create a track</a>
+  </div>
+  {% else %}
+  <div class="profile-list profile-list--cards">
+    {% for p in profiles %}
+    <article class="profile-card{% if p.active %} is-active{% endif %}">
+      <div class="profile-card__top">
+        <div>
+          <span class="profile-card__mark" aria-hidden="true">{{ p.label[:1]|upper }}</span>
+          <div class="profile-card__title">
+            <h3>{{ p.label }}</h3>
+            <p class="meta">{% if p.confirmed %}Ready{% else %}Needs onboarding{% endif %} · {{ p.plan }}{% if p.subscription_status %} · {{ p.subscription_status }}{% endif %}</p>
+          </div>
+        </div>
+        {% if p.active %}<span class="badge ok">Active</span>{% endif %}
+      </div>
+
+      <form method="post" action="/profiles/rename" class="profile-rename">
+        <input type="hidden" name="profile_id" value="{{ p.id }}" />
+        <input name="label" value="{{ p.label }}" maxlength="128" aria-label="Rename {{ p.label }}" />
+        <button class="btn" type="submit">Rename</button>
+      </form>
+
+      <div class="profile-card__actions">
+        {% if p.has_cv %}<a class="btn" href="/profiles/{{ p.id }}/download-cv">Download CV</a>{% endif %}
         <a class="btn" href="/profiles/{{ p.id }}/experience">Experience</a>
         {% if not p.active %}
-        <form method="post" action="/profiles/switch">
-          <input type="hidden" name="profile_id" value="{{ p.id }}" />
-          <button class="btn btn-primary" type="submit">Switch to this track</button>
-        </form>
+          <form method="post" action="/profiles/switch"><input type="hidden" name="profile_id" value="{{ p.id }}" /><button class="btn btn-primary" type="submit">Switch to track</button></form>
         {% else %}
-        <span class="badge ok">Active</span>
-        <a class="btn" href="/billing">Billing</a>
-        {% if not p.confirmed %}<a class="btn" href="/onboarding">Finish onboarding</a>{% endif %}
+          <a class="btn" href="/billing">Billing</a>
+          {% if not p.confirmed %}<a class="btn" href="/onboarding">Finish onboarding</a>{% endif %}
         {% endif %}
         {% if p.can_archive %}
-        <form method="post" action="/profiles/archive" onsubmit="return confirm('Archive this profile? Other tracks stay active.');">
-          <input type="hidden" name="profile_id" value="{{ p.id }}" />
-          <button class="btn btn-danger" type="submit">Archive</button>
-        </form>
+          <form method="post" action="/profiles/archive" onsubmit="return confirm('Archive this profile? Other tracks stay active.');"><input type="hidden" name="profile_id" value="{{ p.id }}" /><button class="btn btn-danger" type="submit">Archive</button></form>
         {% elif p.paid_active %}
-        <span class="meta">Cancel billing first to archive</span>
+          <span class="meta">Cancel billing first to archive</span>
         {% endif %}
       </div>
-    </div>
+    </article>
     {% endfor %}
   </div>
   {% endif %}
-</div>
+</section>
 {% endblock %}
