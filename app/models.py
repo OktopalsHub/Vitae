@@ -436,6 +436,41 @@ class ResumeVersion(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
 
 
+class ResumeGeneration(Base):
+    """Immutable record of one tailored resume generation."""
+
+    __tablename__ = "resume_generations"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("users.id", ondelete="cascade"), nullable=False, index=True)
+    profile_id: Mapped[int] = mapped_column(Integer, ForeignKey("profiles.id", ondelete="cascade"), nullable=False, index=True)
+    listing_id: Mapped[int] = mapped_column(Integer, ForeignKey("job_listings.id", ondelete="cascade"), nullable=False, index=True)
+    source_resume_version_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("resume_versions.id", ondelete="set null"), nullable=True, index=True)
+    generator_version: Mapped[str] = mapped_column(String(64), nullable=False, default="resume.v1")
+    prompt_version: Mapped[str] = mapped_column(String(64), nullable=False, default="cv_tailor.v2")
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="completed", index=True)
+    used_fallback: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    output_dir: Mapped[str] = mapped_column(String(1024), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+
+class ResumeArtifact(Base):
+    """One immutable output file belonging to a resume generation."""
+
+    __tablename__ = "resume_artifacts"
+    __table_args__ = (UniqueConstraint("generation_id", "format", name="uq_resume_artifact_format"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    generation_id: Mapped[int] = mapped_column(Integer, ForeignKey("resume_generations.id", ondelete="cascade"), nullable=False, index=True)
+    format: Mapped[str] = mapped_column(String(16), nullable=False)
+    storage_key: Mapped[str] = mapped_column(String(1024), nullable=False, unique=True)
+    filename: Mapped[str] = mapped_column(String(512), nullable=False)
+    content_type: Mapped[str] = mapped_column(String(255), nullable=False)
+    size_bytes: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    checksum: Mapped[str] = mapped_column(String(128), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
 
 @dataclass
 class JobCard:
