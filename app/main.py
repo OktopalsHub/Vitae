@@ -27,7 +27,9 @@ from app.db import assert_database_migrated
 from app.rate_limit import RateLimitExceeded, enforce
 from app.routes import auto_apply, admin, applications, auth_pages, billing, jobs, onboarding, profiles, settings, site
 from app.scheduler import start_catalogue_sync_task
+from app.observability import configure_logging
 from app.web_helpers import LoginRequired, OnboardingRequired, ForbiddenFlash, safe_http_url
+from app.observability_middleware import ObservabilityMiddleware
 
 
 class CachedStaticFiles(StaticFiles):
@@ -75,6 +77,7 @@ async def lifespan(_app: FastAPI):
                 pass
 
 
+configure_logging()
 ensure_dirs()
 assert_secure_settings()
 
@@ -88,6 +91,7 @@ app = FastAPI(
     redoc_url=None if _prod_like else "/redoc",
     openapi_url=None if _prod_like else "/openapi.json",
 )
+app.add_middleware(ObservabilityMiddleware)
 app.add_middleware(AuthApiRateLimitMiddleware)
 app.add_middleware(CSRFMiddleware)
 templates = Jinja2Templates(directory=str(project_path("app", "templates")))
@@ -216,7 +220,12 @@ async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
 
 @app.get("/health")
 def health():
-    return {"ok": True}
+    return {"ok": True, "service": "web"}
+
+@app.get("/health/ready")
+def readiness():
+    assert_database_migrated()
+    return {"ok": True, "database": "ready"}
 
 app.include_router(
     fastapi_users.get_verify_router(UserRead),
