@@ -31,7 +31,7 @@ Make the product easier to understand and faster to use without changing the cor
 
 ## Firecrawl
 
-Firecrawl is useful when Vitae needs live web data, such as scraping dynamic job pages, crawling job-board sections, or interacting with pages that require browser rendering. Its current API supports search, scrape, crawl and browser interaction. citeturn0search2turn0search5
+Firecrawl is useful when Vitae needs live web data, such as scraping dynamic job pages, crawling job-board sections, or interacting with pages that require browser rendering. Its current API supports search, scrape, crawl and browser interaction. See https://www.firecrawl.dev/ and https://www.firecrawl.dev/crawl.
 
 Phase 15 is a UI/UX phase, so there is no Firecrawl call in the application runtime here. Adding it only to redesign templates would add an unnecessary dependency. The appropriate integration point remains the job-source/data pipeline, where it can be introduced behind the existing source adapter interface when a source needs browser rendering or structured extraction.
 
