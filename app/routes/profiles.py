@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
+import logging
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
@@ -19,7 +20,7 @@ from app.accounts.profile import (
 )
 from app.accounts.bootstrap import ensure_profile_billing
 from app.billing import PAID_PLANS
-from app.config import project_path
+from app.config import get_settings, project_path
 from app.db import get_db
 from app.models import ProfileBilling, User
 from app.profile.cv import merge_parsed_cv, store_cv
@@ -36,6 +37,7 @@ from app.web_helpers import (
 
 router = APIRouter(tags=["profiles"])
 templates = Jinja2Templates(directory=str(project_path("app", "templates")))
+log = logging.getLogger(__name__)
 
 _ACTIVE_SUB = frozenset({"active", "trialing"})
 
@@ -102,7 +104,7 @@ def download_profile_cv(
 
 
 @router.post("/profiles/{profile_id}/replace-cv")
-async def replace_profile_cv(
+def replace_profile_cv(
     profile_id: int,
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
@@ -118,7 +120,7 @@ async def replace_profile_cv(
     new_path = None
     try:
         name = validate_upload_filename(file.filename)
-        content = read_upload_limited(await file.read())
+        content = read_upload_limited(file.file.read(get_settings().max_upload_bytes + 1))
         validate_upload_content(name, content)
 
         if not profile.master_cv_path:
@@ -140,7 +142,10 @@ async def replace_profile_cv(
         raise
 
     if old_path and old_path != new_path and old_path.exists():
-        old_path.unlink(missing_ok=True)
+        try:
+            old_path.unlink(missing_ok=True)
+        except OSError:
+            log.warning("Could not remove replaced CV file", extra={"path": str(old_path)})
 
     return flash_redirect(
         "/profiles",
