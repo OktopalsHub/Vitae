@@ -472,6 +472,71 @@ class ResumeArtifact(Base):
 
 
 
+class ApplicationStatus(str, Enum):
+    DRAFT = "draft"
+    READY = "ready"
+    SUBMITTED = "submitted"
+    SCREENING = "screening"
+    INTERVIEW = "interview"
+    OFFER = "offer"
+    REJECTED = "rejected"
+    WITHDRAWN = "withdrawn"
+
+
+class Application(Base):
+    """Durable application record for one profile and one job listing."""
+
+    __tablename__ = "applications"
+    __table_args__ = (
+        UniqueConstraint("profile_id", "listing_id", name="uq_application_profile_listing"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("users.id", ondelete="cascade"), nullable=False, index=True
+    )
+    profile_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("profiles.id", ondelete="cascade"), nullable=False, index=True
+    )
+    listing_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("job_listings.id", ondelete="set null"), nullable=True, index=True
+    )
+    resume_artifact_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("resume_artifacts.id", ondelete="set null"), nullable=True, index=True
+    )
+    status: Mapped[str] = mapped_column(
+        String(32), nullable=False, default=ApplicationStatus.DRAFT.value, index=True
+    )
+    channel: Mapped[str] = mapped_column(String(32), nullable=False, default="manual")
+    external_url: Mapped[str] = mapped_column(String(1024), default="")
+    external_application_id: Mapped[str] = mapped_column(String(255), default="")
+    cover_blurb: Mapped[str] = mapped_column(Text, default="")
+    answers_json: Mapped[str] = mapped_column(Text, default="[]")
+    notes: Mapped[str] = mapped_column(Text, default="")
+    applied_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True, index=True)
+    last_status_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+    )
+
+
+class ApplicationEvent(Base):
+    """Append-only application lifecycle history."""
+
+    __tablename__ = "application_events"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    application_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("applications.id", ondelete="cascade"), nullable=False, index=True
+    )
+    from_status: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
+    to_status: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    note: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+
+
+
 @dataclass
 class JobCard:
     """Read model: catalogue listing + personal ranking/status (overlay optional)."""
