@@ -48,6 +48,7 @@ def test_stale_worker_is_reclaimed_from_heartbeat(db_session):
     db_session.commit()
     first = claim_next_job(db_session, lease_seconds=60)
     db_session.commit()
+    original_owner = first.lock_owner
 
     current = db_session.get(type(job), job.id)
     stale_at = datetime.utcnow() - timedelta(minutes=10)
@@ -59,7 +60,7 @@ def test_stale_worker_is_reclaimed_from_heartbeat(db_session):
     assert reclaimed is not None
     assert reclaimed.id == first.id
     assert reclaimed.attempts == 2
-    assert reclaimed.lock_owner != first.lock_owner
+    assert reclaimed.lock_owner != original_owner
 
 
 def test_heartbeat_rejects_stale_lock_owner(db_session):
