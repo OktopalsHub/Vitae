@@ -106,3 +106,36 @@ Matching now has an explicit algorithm version (v2) and a structured scoring con
 The profile/config fingerprint includes the matching algorithm version. Changing the algorithm therefore invalidates old cached scores instead of silently serving results from an older scorer.
 
 The matching result is deterministic and explainable. It does not use an opaque score without retaining the signals that produced it.
+
+
+## Phase 7: AI platform
+
+All application LLM calls pass through the shared `llm_complete` gateway.
+
+The gateway provides:
+
+- provider/model resolution through the canonical provider registry
+- bounded provider timeout and retry settings
+- a common safety instruction that treats job and user supplied text as untrusted data
+- privacy-safe telemetry for provider, model, purpose, prompt version, status, latency, and input/output sizes
+- no persistence of prompts, generated text, API keys, or other secret material
+- asynchronous telemetry writes so database logging does not block the application event loop
+
+Generated structured data is validated with Pydantic contracts before it is accepted by resume and application-copy workflows.
+
+Prompt versions are explicit for major generation workflows:
+
+- `cv_tailor.v2`
+- `application_copy.v2`
+
+If a prompt contract changes, increment its version. This makes later quality and failure analysis traceable to the exact generation contract.
+
+Run:
+
+```bash
+alembic upgrade head
+```
+
+Migration `0009_llm_observability` creates the `llm_requests` metadata table.
+
+AI safety is a data-boundary control, not a guarantee that generated text is truthful. Vitae still uses post-validation and rule-based fallbacks when model output is missing, malformed, or incomplete.
