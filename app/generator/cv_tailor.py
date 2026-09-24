@@ -8,9 +8,12 @@ Export writers live in cv_export.py.
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import re
+import uuid
 from pathlib import Path
+from sqlalchemy.orm import Session
 from typing import Any
 
 from slugify import slugify
@@ -20,6 +23,7 @@ from app.llm import LLMCreds, has_llm, llm_complete
 from app.ai.contracts import TailoredResume
 from app.ai.safety import sanitize_untrusted_text
 from app.profile.loader import load_or_build_profile
+from app.models import ResumeArtifact, ResumeGeneration, ResumeVersion
 from app.generator.cv_prompts import SYSTEM_PROMPT
 from app.generator.cv_helpers import (
     fallback_resume,
@@ -141,6 +145,7 @@ def output_dir_for(
         folder = project_path(
             "data", "users", str(user_id), "outputs", f"{job.id}-{company}-{role}"
         )
+    folder = folder / f"generation-{uuid.uuid4().hex}"
     folder.mkdir(parents=True, exist_ok=True)
     return folder
 
@@ -203,6 +208,7 @@ async def generate_resume_files(
     user_id: str | None = None,
     profile_id: int | None = None,
     display_name: str | None = None,
+    db: Session | None = None,
 ) -> tuple[Path, bool]:
     """Write PDF/DOCX exports. Returns (output_dir, used_fallback)."""
     profile = profile or load_or_build_profile()
@@ -211,12 +217,51 @@ async def generate_resume_files(
     data, used_fallback = await build_tailored_content(job, profile=profile, creds=creds)
     out = output_dir_for(job, user_id=user_id, profile_id=profile_id)
 
-    for old in out.iterdir():
-        if old.is_file():
-            old.unlink(missing_ok=True)
-
     base = resume_basename(job, display_name=name)
-    write_docx(out / f"{base}.docx", name, contact, data)
-    write_pdf(out / f"{base}.pdf", name, contact, data)
+    docx_path = out / f"{base}.docx"
+    pdf_path = out / f"{base}.pdf"
+    write_docx(docx_path, name, contact, data)
+    write_pdf(pdf_path, name, contact, data)
+
+    if db is not None and profile_id is not None and getattr(job, "id", None) is not None:
+        source_version = (
+            db.query(ResumeVersion)
+            .filter(
+                ResumeVersion.profile_id == profile_id,
+                ResumeVersion.status == "active",
+            )
+            .order_by(ResumeVersion.version.desc())
+            .first()
+        )
+        generation = ResumeGeneration(
+            user_id=uuid.UUID(str(user_id)),
+            profile_id=profile_id,
+            listing_id=int(job.id),
+            source_resume_version_id=source_version.id if source_version else None,
+            generator_version="resume.v1",
+            prompt_version="cv_tailor.v2",
+            status="completed",
+            used_fallback=used_fallback,
+            output_dir=str(out),
+        )
+        db.add(generation)
+        db.flush()
+
+        for fmt, path, content_type in (
+            ("pdf", pdf_path, "application/pdf"),
+            ("docx", docx_path, "application/vnd.openxmlformats-officedocument.wordprocessingml.document"),
+        ):
+            payload = path.read_bytes()
+            db.add(
+                ResumeArtifact(
+                    generation_id=generation.id,
+                    format=fmt,
+                    storage_key=str(path),
+                    filename=path.name,
+                    content_type=content_type,
+                    size_bytes=len(payload),
+                    checksum=hashlib.sha256(payload).hexdigest(),
+                )
+            )
 
     return out, used_fallback
