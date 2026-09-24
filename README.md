@@ -45,7 +45,7 @@ Production runs the application as separate services from one immutable image:
 - **Artifact storage:** generated CVs use the storage abstraction; production should use S3-compatible object storage.
 - **Backups:** PostgreSQL backup and archive verification commands are provided under `scripts/`.
 
-See [Phase 16 production architecture](docs/phase-16-production-architecture.md), [Phase 17 final cleanup](docs/phase-17-final-cleanup.md), and [Phase 22 data durability](docs/phase-22-data-durability.md).
+See [Phase 16 production architecture](docs/phase-16-production-architecture.md), [Phase 17 final cleanup](docs/phase-17-final-cleanup.md), and [Phase 22 data durability](docs/phase-22-data-durability.md), and [Phase 23 operational resilience](docs/phase-23-operational-resilience.md).
 
 ## Installation
 
