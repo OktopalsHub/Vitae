@@ -59,24 +59,29 @@ class LocalObjectStorage(ObjectStorage):
 class S3ObjectStorage(ObjectStorage):
     def __init__(self) -> None:
         settings = get_settings()
-        bucket = (settings.object_storage_bucket or "").strip()
-        if not bucket:
-            raise StorageError("OBJECT_STORAGE_BUCKET is required for S3 storage")
+        bucket = (settings.r2_bucket_name or "").strip()
+        account_id = (settings.r2_account_id or "").strip()
+        access_key_id = (settings.r2_access_key_id or "").strip()
+        secret_access_key = (settings.r2_secret_access_key or "").strip()
+        if not bucket or not account_id or not access_key_id or not secret_access_key:
+            raise StorageError(
+                "R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, and R2_BUCKET_NAME are required"
+            )
         try:
             import boto3
         except ImportError as exc:
             raise StorageError("boto3 is required for S3 object storage") from exc
         kwargs = {"config": __import__("botocore").config.Config(signature_version="s3v4")}
-        # R2 and other S3-compatible endpoints require path-style addressing only when the provider needs it.
-        # boto3 defaults to virtual-hosted addressing, which R2 supports.
-        endpoint = (settings.object_storage_endpoint or "").strip()
-        if endpoint:
-            kwargs["endpoint_url"] = endpoint
-        region = (settings.object_storage_region or "").strip()
-        if region:
-            kwargs["region_name"] = region
+        endpoint = f"https://{account_id}.r2.cloudflarestorage.com"
         self.bucket = bucket
-        self.client = boto3.client("s3", **kwargs)
+        self.client = boto3.client(
+            "s3",
+            endpoint_url=endpoint,
+            region_name="auto",
+            aws_access_key_id=access_key_id,
+            aws_secret_access_key=secret_access_key,
+            **kwargs,
+        )
 
     def put(self, key: str, data: bytes, *, content_type: str = "application/octet-stream") -> str:
         self.client.upload_fileobj(
@@ -106,7 +111,7 @@ class S3ObjectStorage(ObjectStorage):
 def get_storage() -> ObjectStorage:
     settings = get_settings()
     backend = (settings.object_storage_backend or "local").strip().lower()
-    if backend == "s3":
+    if backend == "r2":
         return S3ObjectStorage()
     if backend != "local":
         raise StorageError(f"unsupported object storage backend: {backend}")
