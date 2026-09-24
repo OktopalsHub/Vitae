@@ -127,7 +127,7 @@ def job_card_from(
             output_dir=overlay.output_dir,
             user_job=overlay,
         )
-    score, reasons = score_listing_cached(listing, profile, cfg)
+    score, reasons, breakdown = score_listing_cached(listing, profile, cfg)
     return JobCard(
         listing=listing,
         match_score=score,
@@ -904,6 +904,8 @@ async def add_pasted_job_for_user(
         listing_id=listing.id,
         match_score=score,
         match_reasons=reasons,
+        breakdown_json=breakdown,
+        algorithm_version=MATCHING_ALGORITHM_VERSION,
         fingerprint=score_fingerprint(profile, cfg),
     )
     db.commit()
