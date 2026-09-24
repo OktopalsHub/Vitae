@@ -182,6 +182,7 @@ def api_key_status() -> dict[str, bool]:
     status: dict[str, bool] = {
         "adzuna": bool(s.adzuna_app_id and s.adzuna_app_key),
         "jooble": bool(s.jooble_api_key),
+        "firecrawl": bool(s.firecrawl_api_key),
     }
     any_llm = False
     for spec in PLATFORM_PROVIDERS:
