@@ -6,6 +6,7 @@ from uuid import uuid4
 from sqlalchemy.orm import Session
 
 from app.applications import get_or_create_application
+from app.workers.queue import enqueue_job
 from app.models import (
     ApplicationStatus,
     AutoApplyItem,
@@ -118,6 +119,18 @@ def start_run(db: Session, user: User, run_id: int) -> AutoApplyRun:
     run.status = AutoApplyRunStatus.RUNNING.value
     run.started_at = run.started_at or datetime.utcnow()
     run.updated_at = datetime.utcnow()
+    items = db.query(AutoApplyItem).filter(
+        AutoApplyItem.run_id == run.id,
+        AutoApplyItem.status == AutoApplyItemStatus.QUEUED.value,
+    ).all()
+    for item in items:
+        enqueue_job(
+            db,
+            kind="auto_apply_prepare",
+            queue="auto-apply",
+            payload={"item_id": item.id},
+            idempotency_key=f"auto-apply-item:{item.id}",
+        )
     db.flush()
     return run
 
