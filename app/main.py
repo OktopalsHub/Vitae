@@ -127,7 +127,7 @@ settings_cfg = _settings
 _oauth_cookie_secure = cookie_secure_flag()
 
 app.include_router(
-    fastapi_users.get_auth_router(auth_backend, requires_verification=True),
+    fastapi_users.get_auth_router(auth_backend, requires_verification=False),
     prefix="/auth",
     tags=["auth"],
 )
@@ -137,7 +137,7 @@ app.include_router(
     tags=["auth"],
 )
 app.include_router(
-    fastapi_users.get_users_router(UserRead, UserUpdate, requires_verification=True),
+    fastapi_users.get_users_router(UserRead, UserUpdate, requires_verification=False),
     prefix="/users",
     tags=["users"],
 )
@@ -259,9 +259,4 @@ def readiness():
     assert_database_migrated()
     return {"ok": True, "database": "ready"}
 
-app.include_router(
-    fastapi_users.get_verify_router(UserRead),
-    prefix="/auth",
-    tags=["auth"],
-)
 
