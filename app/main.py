@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 from contextlib import asynccontextmanager
 from urllib.parse import quote
 
@@ -64,7 +65,8 @@ async def lifespan(_app: FastAPI):
     assert_secure_settings()
     assert_database_migrated()
     warn_site_settings()
-    tasks = start_catalogue_sync_task()
+    run_scheduler = os.getenv("RUN_SCHEDULER", "1").strip().lower() not in {"0", "false", "no"}
+    tasks = start_catalogue_sync_task() if run_scheduler else []
     try:
         yield
     finally:

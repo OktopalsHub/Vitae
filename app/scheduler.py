@@ -78,3 +78,19 @@ def start_catalogue_sync_task() -> list[asyncio.Task]:
     if not _env_disabled("USER_RANK_REFRESH_DISABLED"):
         tasks.append(asyncio.create_task(user_rank_refresh_loop(), name="matching-scheduler"))
     return tasks
+
+
+async def run_scheduler() -> None:
+    """Run periodic enqueue loops outside the web process."""
+    await asyncio.gather(
+        catalogue_sync_loop(),
+        user_rank_refresh_loop(),
+    )
+
+
+def main() -> None:
+    asyncio.run(run_scheduler())
+
+
+if __name__ == "__main__":
+    main()

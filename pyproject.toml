@@ -39,6 +39,7 @@ dependencies = [
 
 [project.scripts]
 vitae-worker = "app.workers.runner:main"
+vitae-scheduler = "app.scheduler:main"
 
 [dependency-groups]
 test = [
