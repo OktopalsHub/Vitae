@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import uuid
 from urllib.parse import quote
@@ -22,7 +23,7 @@ from app.billing import (
 )
 from app.config import project_path
 from app.db import get_db
-from app.models import BillingPlan, Profile, ProfileBilling, User
+from app.models import BillingEvent, BillingPlan, BillingSubscriptionEvent, Profile, ProfileBilling, User
 from app.roles import is_admin
 from app.web_helpers import flash_redirect, require_user, template_ctx
 
@@ -151,8 +152,34 @@ async def bachs_webhook(request: Request, db: Session = Depends(get_db)):
     except json.JSONDecodeError as exc:
         raise HTTPException(400, "Invalid JSON") from exc
 
-    etype = event.get("type") or ""
+    etype = str(event.get("type") or "")
     data = event.get("data") or {}
+    if not isinstance(data, dict):
+        data = {}
+    event_id = str(
+        event.get("id")
+        or data.get("event_id")
+        or data.get("id")
+        or hashlib.sha256(raw).hexdigest()
+    )
+    payload_hash = hashlib.sha256(raw).hexdigest()
+    existing_event = (
+        db.query(BillingEvent)
+        .filter(BillingEvent.provider == "bachs", BillingEvent.event_id == event_id)
+        .one_or_none()
+    )
+    if existing_event is not None:
+        return {"ok": True, "duplicate": True}
+    billing_event = BillingEvent(
+        provider="bachs",
+        event_id=event_id,
+        event_type=etype,
+        payload_hash=payload_hash,
+        payload_json=raw.decode("utf-8", errors="replace")[:200000],
+        status="received",
+    )
+    db.add(billing_event)
+    db.flush()
     meta = data.get("metadata") or {}
     if isinstance(meta, str):
         try:
@@ -193,6 +220,7 @@ async def bachs_webhook(request: Request, db: Session = Depends(get_db)):
         return JSONResponse({"ok": True, "ignored": "no user"})
 
     billing = _resolve_billing_for_webhook(db, user, meta if isinstance(meta, dict) else {})
+    previous_status = billing.subscription_status or ""
     if customer_id:
         billing.bachs_customer_id = str(customer_id)
     checkout_id = data.get("checkout_id") or ""
@@ -265,5 +293,19 @@ async def bachs_webhook(request: Request, db: Session = Depends(get_db)):
             billing.subscription_status = "past_due"
 
     db.add(billing)
+    if previous_status != billing.subscription_status:
+        db.add(
+            BillingSubscriptionEvent(
+                profile_id=int(billing.profile_id),
+                provider="bachs",
+                subscription_id=billing.bachs_subscription_id or "",
+                from_status=previous_status,
+                to_status=billing.subscription_status or "",
+                plan=billing.plan or "",
+                billing_event_id=billing_event.id,
+            )
+        )
+    billing_event.status = "processed"
+    billing_event.processed_at = __import__("datetime").datetime.utcnow()
     db.commit()
     return {"ok": True}
