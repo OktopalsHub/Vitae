@@ -170,3 +170,35 @@ alembic upgrade head
 Migration `0010_resume_artifacts` creates `resume_generations` and `resume_artifacts`.
 
 Resume generation remains synchronous for now. Phase 11 moves this work to durable background workers.
+
+
+## Phase 9: Application lifecycle
+
+Applications are now a durable record instead of a status flag on `user_jobs`.
+
+Each application is unique per active profile and job listing and stores:
+
+- lifecycle status
+- submission channel
+- employer application URL or external ID
+- the cover note and application answers used for the application
+- the tailored resume artifact used, when one exists
+- submission timestamp and notes
+
+Application history is append-only in `application_events`. Status changes are validated by an explicit transition map, so terminal states cannot silently move backwards.
+
+The existing `user_jobs.status` field remains for compatibility. Moving an application to `submitted` also moves its matching job overlay to `applied`. Future application UI should use the application record as the source of truth.
+
+Creating an application is idempotent for the same profile and listing. Re-opening the same job does not create duplicate applications.
+
+Run:
+
+```bash
+alembic upgrade head
+```
+
+Migration `0011_applications` creates `applications` and `application_events`.
+
+The application record stores a snapshot of the application copy. This is intentional: later edits to an Apply Assist draft must not change what was recorded as submitted.
+
+Actual employer submission remains user-controlled. Vitae records that the user marked the application as submitted; it does not claim that an external employer system accepted the submission.
