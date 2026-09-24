@@ -10,6 +10,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from app.admin_audit import record_admin_action
 from app.config import project_path
 from app.db import get_db
 from app.models import JobListing, ListingVisibility, ProfileBilling, User, UserJob, UserRole, WorkerJob, WorkerJobStatus
@@ -128,8 +129,17 @@ def set_user_role(
     ok, reason = can_assign_role(actor, target, role)
     if not ok:
         return flash_redirect("/admin/users", reason)
+    previous_role = user_role(target)
     apply_role(target, role)
     db.add(target)
+    record_admin_action(
+        db,
+        actor,
+        action="user.role_updated",
+        resource_type="user",
+        resource_id=str(target.id),
+        metadata={"from_role": previous_role, "to_role": user_role(target)},
+    )
     db.commit()
     return flash_redirect("/admin/users", f"Updated {target.email} → {user_role(target)}")
 
@@ -191,5 +201,43 @@ def retry_dead_worker_job(
     job.last_heartbeat_at = None
     job.lock_owner = ""
     job.failed_at = None
+    record_admin_action(
+        db,
+        user,
+        action="worker_job.retried",
+        resource_type="worker_job",
+        resource_id=str(job.id),
+        metadata={"kind": job.kind, "queue": job.queue},
+    )
     db.commit()
     return flash_redirect("/admin", f"Worker job {job.id} requeued.")
+
+
+@router.get("/operations/audit")
+def admin_audit_events(
+    db: Session = Depends(get_db),
+    user: User = Depends(require_admin_user),
+):
+    """Return recent privileged actions without exposing secrets or payloads."""
+    from app.models import AdminAuditEvent
+
+    rows = (
+        db.query(AdminAuditEvent)
+        .order_by(AdminAuditEvent.created_at.desc())
+        .limit(100)
+        .all()
+    )
+    return {
+        "events": [
+            {
+                "id": row.id,
+                "actor_user_id": str(row.actor_user_id) if row.actor_user_id else None,
+                "action": row.action,
+                "resource_type": row.resource_type,
+                "resource_id": row.resource_id,
+                "metadata": row.metadata_json,
+                "created_at": row.created_at.isoformat() + "Z",
+            }
+            for row in rows
+        ]
+    }

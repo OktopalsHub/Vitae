@@ -61,7 +61,7 @@ def test_numeric_job_id_is_not_found(confirmed_user, client):
 def test_profiles_page_lets_you_create_and_switch(confirmed_user, client):
     r = client.get("/profiles")
     assert r.status_code == 200
-    assert b"Create profile" in r.content
+    assert b"Create track" in r.content
     assert b'action="/profiles/create"' in r.content
     assert b">Profiles<" in r.content
 

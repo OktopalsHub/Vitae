@@ -11,7 +11,8 @@ from typing import Any
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.matching.scorer import MATCHING_ALGORITHM_VERSION, reasons_to_json, score_job_versioned
+from app.matching import scorer
+from app.matching.scorer import reasons_to_json, score_job_versioned
 from app.models import ListingMatchScore
 
 log = logging.getLogger(__name__)
@@ -30,7 +31,7 @@ def score_fingerprint(profile: dict[str, Any], cfg: dict[str, Any]) -> str:
         "title_keywords": cfg.get("title_keywords") or [],
         "penalty_keywords": cfg.get("penalty_keywords") or [],
         "exclude_title_patterns": cfg.get("exclude_title_patterns") or [],
-        "algorithm_version": MATCHING_ALGORITHM_VERSION,
+        "algorithm_version": scorer.MATCHING_ALGORITHM_VERSION,
     }
     raw = json.dumps(payload, sort_keys=True, default=str)
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:40]
@@ -69,10 +70,11 @@ def upsert_match_score(
     match_score: float,
     match_reasons: str,
     breakdown_json: str = "{}",
-    algorithm_version: str = MATCHING_ALGORITHM_VERSION,
+    algorithm_version: str | None = None,
     fingerprint: str = "",
     existing: ListingMatchScore | None = None,
 ) -> ListingMatchScore:
+    algorithm_version = algorithm_version or scorer.MATCHING_ALGORITHM_VERSION
     row = existing
     if row is None:
         row = (

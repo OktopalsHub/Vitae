@@ -50,7 +50,6 @@ def apply_role(user: User, role: str) -> None:
     user.role = normalized
     # Columns exist for fastapi-users schema compatibility; never used for authz.
     user.is_superuser = False
-    user.is_verified = True
 
 
 def can_assign_role(actor: User, target: User, new_role: str) -> tuple[bool, str]:

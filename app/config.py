@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from functools import lru_cache
+import os
 from pathlib import Path
 from typing import Any
 
@@ -110,6 +111,30 @@ def assert_secure_settings() -> None:
             "FERNET_SECRET_KEY must be set to a strong, unique value in .env. "
             "Generate one with: python -c \"from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())\""
         )
+    if _is_prod_like():
+        metrics_token = (s.metrics_token or "").strip()
+        if metrics_token and len(metrics_token) < 32:
+            raise RuntimeError("METRICS_TOKEN must be at least 32 characters when configured.")
+
+        rate_backend = (s.rate_limit_backend or "local").strip().lower()
+        if rate_backend == "redis" and not (s.redis_url or "").strip():
+            raise RuntimeError("REDIS_URL is required when RATE_LIMIT_BACKEND=redis.")
+        if rate_backend not in {"local", "redis"}:
+            raise RuntimeError("RATE_LIMIT_BACKEND must be local or redis.")
+
+        storage_backend = (s.object_storage_backend or "local").strip().lower()
+        if storage_backend == "s3":
+            if not (s.object_storage_bucket or "").strip():
+                raise RuntimeError("OBJECT_STORAGE_BUCKET is required when OBJECT_STORAGE_BACKEND=s3.")
+            endpoint = (s.object_storage_endpoint or "").strip()
+            if endpoint and not endpoint.startswith("https://"):
+                raise RuntimeError("OBJECT_STORAGE_ENDPOINT must use HTTPS in production.")
+            if endpoint and "r2.cloudflarestorage.com" in endpoint:
+                if not os.getenv("AWS_ACCESS_KEY_ID") or not os.getenv("AWS_SECRET_ACCESS_KEY"):
+                    raise RuntimeError("Cloudflare R2 requires AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY in production.")
+        elif storage_backend != "local":
+            raise RuntimeError("OBJECT_STORAGE_BACKEND must be local or s3.")
+
 
 
 def warn_site_settings() -> None:

@@ -88,7 +88,7 @@ def register_user(client: TestClient):
 
 @pytest.fixture
 def confirmed_user(client: TestClient, register_user, db_session):
-    """Registered user with confirmed profile (skips CV upload)."""
+    """Registered, verified, authenticated user with a confirmed profile (skips CV upload)."""
     from app.rate_limit import reset_rate_limits
 
     reset_rate_limits()
@@ -105,7 +105,17 @@ def confirmed_user(client: TestClient, register_user, db_session):
         '"experience_raw":["Acme Corp — built APIs"],"projects_raw":[],"education_raw":[]}'
     )
     profile.career_facts_json = '["Shipped APIs used by 10k users"]'
+    user.is_verified = True
     db.add(profile)
+    db.add(user)
     db.commit()
     db.refresh(user)
-    return {"user": user, **creds}
+
+    login_csrf = _csrf(client)
+    login = client.post(
+        "/login",
+        data={"email": email, "password": creds["password"], "next": "/jobs", "csrf_token": login_csrf},
+        follow_redirects=False,
+    )
+    assert login.status_code in {302, 303}
+    return {"user": user, **creds, "csrf_token": login_csrf}
