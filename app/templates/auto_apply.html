@@ -1,26 +1,52 @@
 {% extends "base.html" %}
 {% block title %}Auto-Apply · Vitae{% endblock %}
 {% block content %}
-<div class="page-head">
-  <div><p class="eyebrow">Controlled automation</p><h1>Auto-Apply</h1><p class="meta">Prepare applications in batches. Vitae never submits to an employer without an explicit submission action.</p></div>
-  <a class="btn" href="/applications">Applications</a>
+<div class="page-head page-head--wide">
+  <div><p class="eyebrow">Controlled automation</p><h1>Prepare applications in batches</h1><p class="lede">Vitae prepares the work. You keep control of every employer submission.</p></div>
+  <a class="btn" href="/applications">Application tracker</a>
 </div>
-<div class="panel">
-  <h3 class="rule-title" style="margin-top:0">Create a batch</h3>
-  <form action="/auto-apply/runs" method="post">
-    <label>Job listing IDs <input name="listing_ids" placeholder="12, 18, 24" required /></label>
-    <label style="margin-top:var(--s2)">Maximum applications <input name="max_applications" type="number" min="1" max="100" value="10" /></label>
-    <label style="display:flex;gap:var(--s2);align-items:center;margin-top:var(--s2)"><input name="requires_review" type="checkbox" checked /> Require review before submission</label>
-    <button class="btn btn-primary" type="submit" style="margin-top:var(--s3)">Create batch</button>
-  </form>
+
+<div class="automation-grid">
+  <section class="panel">
+    <div class="section-heading">
+      <div><p class="kicker">New batch</p><h2 class="section-title">Choose the jobs</h2></div>
+      <span class="badge ok">Review first</span>
+    </div>
+    <form action="/auto-apply/runs" method="post" class="automation-form">
+      <label>Job listing IDs
+        <input name="listing_ids" placeholder="12, 18, 24" required />
+        <span class="field-hint">Comma-separated IDs from your matching jobs.</span>
+      </label>
+      <label>Maximum applications
+        <input name="max_applications" type="number" min="1" max="100" value="10" />
+      </label>
+      <label class="check-row"><input name="requires_review" type="checkbox" checked /> <span><strong>Require review</strong><small>Keep each prepared application paused until you approve it.</small></span></label>
+      <button class="btn btn-primary" type="submit">Create preparation batch</button>
+    </form>
+  </section>
+
+  <aside class="panel automation-note">
+    <p class="kicker">Safety rule</p>
+    <h2 class="section-title">You stay in control</h2>
+    <p class="meta">Vitae does not submit to employers automatically. A prepared item must pass the review flow before you mark it submitted.</p>
+    <div class="safety-points">
+      <span>Prepare</span><span>Review</span><span>Approve</span><span>Submit</span>
+    </div>
+  </aside>
 </div>
-<div class="panel">
-  <h3 class="rule-title" style="margin-top:0">Recent batches</h3>
-  {% for run in runs %}
-  <div class="application-row">
-    <div><strong>Batch #{{ run.id }}</strong><div class="meta">{{ run.status }} · {{ run.max_applications }} max · {{ run.created_at.strftime('%Y-%m-%d %H:%M') }}</div></div>
-    <a class="btn" href="/auto-apply/runs/{{ run.id }}">Open</a>
+
+<section class="panel">
+  <div class="section-heading"><div><p class="kicker">History</p><h2 class="section-title">Recent batches</h2></div><span class="meta">{{ runs|length }} batch{% if runs|length != 1 %}es{% endif %}</span></div>
+  <div class="run-list">
+    {% for run in runs %}
+    <a class="run-row" href="/auto-apply/runs/{{ run.id }}">
+      <span class="run-row__id">#{{ run.id }}</span>
+      <span><strong>{{ run.status|title }}</strong><span class="meta">{{ run.max_applications }} max · {{ run.created_at.strftime('%Y-%m-%d %H:%M') }}</span></span>
+      <span aria-hidden="true">→</span>
+    </a>
+    {% else %}
+    <div class="empty-state empty-state--compact"><h3>No batches yet</h3><p class="meta">Create your first batch when you have several prepared applications.</p></div>
+    {% endfor %}
   </div>
-  {% else %}<p class="meta">No auto-apply batches yet.</p>{% endfor %}
-</div>
+</section>
 {% endblock %}
