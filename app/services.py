@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import json
 import logging
 import secrets
 from datetime import datetime
@@ -20,10 +22,12 @@ from app.matching.score_cache import (
     upsert_match_score,
 )
 from app.db import SessionLocal
-from app.matching.scorer import reasons_to_json, score_job
+from app.matching.scorer import MATCHING_ALGORITHM_VERSION, reasons_to_json, score_job_versioned
 from app.models import (
     JobCard,
     JobListing,
+    JobSource,
+    JobSourceRecord,
     JobStatus,
     ListingMatchScore,
     ListingVisibility,
@@ -31,7 +35,8 @@ from app.models import (
     UserJob,
 )
 from app.sources.base import RawJob
-from app.sources.fetchers import dedupe_raw_jobs, ingest_pasted_job, iter_fetch_sources
+from app.sources.fetchers import dedupe_raw_jobs, ingest_pasted_job
+from app.sources.orchestrator import iter_fetch_source_results
 from app.accounts import (
     ensure_account,
     get_active_profile,
@@ -39,6 +44,16 @@ from app.accounts import (
     load_user_settings,
 )
 from app.scheduler_state import mark_sync_finished, mark_sync_progress, mark_sync_started
+
+
+def _canonical_key(raw: RawJob) -> str:
+    """Stable cross-source identity without storing long or sensitive source URLs."""
+    url = (raw.url or "").split("?")[0].rstrip("/").lower()
+    if url:
+        value = f"url:{url}"
+    else:
+        value = f"job:{raw.title.strip().lower()}|{raw.company.strip().lower()}|{raw.location.strip().lower()}"
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
 
 def new_listing_public_id() -> str:
@@ -78,9 +93,9 @@ def _score_payload(listing: JobListing) -> dict[str, Any]:
 
 def score_listing(
     listing: JobListing, profile: dict[str, Any], cfg: dict[str, Any]
-) -> tuple[float, str]:
-    score, reasons = score_job(_score_payload(listing), profile, cfg)
-    return float(score), reasons_to_json(reasons)
+) -> tuple[float, str, str]:
+    result = score_job_versioned(_score_payload(listing), profile, cfg)
+    return float(result["score"]), reasons_to_json(result["reasons"]), json.dumps(result, ensure_ascii=False)
 
 
 def job_card_from(
@@ -123,7 +138,46 @@ def job_card_from(
     )
 
 
-def upsert_public_listing(db: Session, raw: RawJob) -> JobListing:
+def _source_display_name(source_key: str) -> str:
+    return source_key.replace(":", " / ").replace("_", " ").title()
+
+
+def _upsert_source(db: Session, key: str) -> JobSource:
+    row = db.query(JobSource).filter(JobSource.key == key).one_or_none()
+    if row is None:
+        row = JobSource(key=key, display_name=_source_display_name(key), enabled=True)
+        db.add(row)
+        db.flush()
+    return row
+
+
+def _upsert_source_record(db: Session, source: JobSource, listing: JobListing, raw: RawJob) -> JobSourceRecord:
+    now = datetime.utcnow()
+    row = db.query(JobSourceRecord).filter(
+        JobSourceRecord.source_id == source.id,
+        JobSourceRecord.external_id == raw.external_id,
+    ).one_or_none()
+    payload = json.dumps(raw.to_dict(), default=str, ensure_ascii=False)
+    if row is None:
+        row = JobSourceRecord(
+            source_id=source.id,
+            listing_id=listing.id,
+            external_id=raw.external_id,
+            payload_json=payload,
+            first_seen_at=now,
+            last_seen_at=now,
+            is_active=True,
+        )
+        db.add(row)
+    else:
+        row.listing_id = listing.id
+        row.payload_json = payload
+        row.last_seen_at = now
+        row.is_active = True
+    return row
+
+
+def upsert_public_listing(db: Session, raw: RawJob, *, source_key: str | None = None) -> JobListing:
     existing = (
         db.query(JobListing)
         .filter(
@@ -141,6 +195,18 @@ def upsert_public_listing(db: Session, raw: RawJob) -> JobListing:
         existing.url = raw.url or existing.url
         existing.description = raw.description or existing.description
         existing.salary = raw.salary or existing.salary
+        existing.source_key = source_key or existing.source_key or raw.source
+        existing.normalized_location = raw.normalized_location or raw.location or existing.normalized_location
+        existing.employment_type = raw.employment_type or existing.employment_type
+        existing.remote_type = raw.remote_type or existing.remote_type
+        existing.experience_level = raw.experience_level or existing.experience_level
+        existing.salary_min = raw.salary_min if raw.salary_min is not None else existing.salary_min
+        existing.salary_max = raw.salary_max if raw.salary_max is not None else existing.salary_max
+        existing.salary_currency = raw.salary_currency or existing.salary_currency
+        existing.posted_at = raw.posted_at or existing.posted_at
+        existing.expires_at = raw.expires_at or existing.expires_at
+        existing.source_updated_at = raw.source_updated_at or existing.source_updated_at
+        existing.canonical_key = existing.canonical_key or _canonical_key(raw)
         existing.visibility = ListingVisibility.PUBLIC.value
         existing.is_active = True
         existing.closed_at = None
@@ -157,6 +223,18 @@ def upsert_public_listing(db: Session, raw: RawJob) -> JobListing:
         url=raw.url,
         description=raw.description,
         salary=raw.salary,
+        canonical_key=(raw.url or raw.external_id).split("?")[0].rstrip("/").lower()[:128],
+        source_key=source_key or raw.source,
+        normalized_location=raw.normalized_location or raw.location,
+        employment_type=raw.employment_type,
+        remote_type=raw.remote_type,
+        experience_level=raw.experience_level,
+        salary_min=raw.salary_min,
+        salary_max=raw.salary_max,
+        salary_currency=raw.salary_currency,
+        posted_at=raw.posted_at,
+        expires_at=raw.expires_at,
+        source_updated_at=raw.source_updated_at,
         visibility=ListingVisibility.PUBLIC.value,
         scope_key="public",
         owner_user_id=None,
@@ -189,7 +267,7 @@ def close_missing_public_listings(
     if sources is not None:
         if not sources:
             return 0
-        q = q.filter(JobListing.source.in_(sources))
+        q = q.filter(JobListing.source_key.in_(sources))
     rows = q.all()
     for listing in rows:
         listing.is_active = False
@@ -238,7 +316,7 @@ def ensure_user_job(
         return row
     profile = profile if profile is not None else load_user_profile_dict(db, user)
     cfg = cfg if cfg is not None else load_user_settings(db, user)
-    score, reasons = score_listing(listing, profile, cfg)
+    score, reasons, _breakdown = score_listing(listing, profile, cfg)
     row = UserJob(
         user_id=user.id,
         profile_id=active.id,
@@ -312,13 +390,15 @@ def list_job_cards(
     if listings and not score_map:
         existing_rows = load_all_scores_for_profile(db, active.id)
         for i, listing in enumerate(listings, start=1):
-            score, reasons = score_listing_cached(listing, profile, cfg)
+            score, reasons, breakdown = score_listing_cached(listing, profile, cfg)
             row = upsert_match_score(
                 db,
                 profile_id=active.id,
                 listing_id=listing.id,
                 match_score=score,
                 match_reasons=reasons,
+                breakdown_json=breakdown,
+                algorithm_version=MATCHING_ALGORITHM_VERSION,
                 fingerprint=fingerprint,
                 existing=existing_rows.get(listing.id),
             )
@@ -375,7 +455,7 @@ def list_job_cards(
         else:
             if existing_rows is None:
                 existing_rows = load_all_scores_for_profile(db, active.id)
-            score, reasons = score_listing_cached(listing, profile, cfg)
+            score, reasons, breakdown = score_listing_cached(listing, profile, cfg)
             upsert_match_score(
                 db,
                 profile_id=active.id,
@@ -432,13 +512,15 @@ def refresh_profile_match_scores(db: Session, user: User) -> int:
     existing = load_all_scores_for_profile(db, active.id)
     n = 0
     for listing in listings:
-        score, reasons = score_listing_cached(listing, profile, cfg)
+        score, reasons, breakdown = score_listing_cached(listing, profile, cfg)
         upsert_match_score(
             db,
             profile_id=active.id,
             listing_id=listing.id,
             match_score=score,
             match_reasons=reasons,
+            breakdown_json=breakdown,
+            algorithm_version=MATCHING_ALGORITHM_VERSION,
             fingerprint=fingerprint,
             existing=existing.get(listing.id),
         )
@@ -553,30 +635,40 @@ def top_clear_listing_ids(
 
 
 async def sync_public_jobs(db: Session) -> dict[str, Any]:
-    """Upsert jobs from APIs (commit per source); close listings missing at the end."""
+    """Sync all configured sources with durable health/provenance and safe closure semantics."""
     mark_sync_started()
     sync_started_at = datetime.utcnow()
     cfg = load_yaml_config()
     settings = get_settings()
 
     url_index: dict[str, JobListing] = {}
-    for cand in db.query(JobListing).filter(
-        JobListing.scope_key == "public",
-        JobListing.url != "",
-    ).all():
+    for cand in db.query(JobListing).filter(JobListing.scope_key == "public", JobListing.url != "").all():
         key = (cand.url or "").split("?")[0].rstrip("/").lower()
         if key:
             url_index[key] = cand
 
-    created = updated = reopened = fetched = 0
-    sources_with_data: set[str] = set()
+    created = updated = reopened = fetched = failed = 0
+    successful_sources: set[str] = set()
+    source_results: dict[str, dict[str, Any]] = {}
     try:
-        async for label, batch in iter_fetch_sources(cfg, settings):
-            if not batch:
-                mark_sync_progress(
-                    source=label, fetched=fetched, created=created, updated=updated
-                )
+        async for label, ok, batch, error in iter_fetch_source_results(cfg, settings):
+            source_row = _upsert_source(db, label)
+            source_row.last_started_at = datetime.utcnow()
+            if not ok:
+                failed += 1
+                source_row.last_error_at = datetime.utcnow()
+                source_row.last_error = error[:4000]
+                source_row.consecutive_failures += 1
+                source_results[label] = {"ok": False, "error": error}
+                db.commit()
+                mark_sync_progress(source=label, fetched=fetched, created=created, updated=updated)
                 continue
+
+            successful_sources.add(label)
+            source_row.last_success_at = datetime.utcnow()
+            source_row.last_error = ""
+            source_row.consecutive_failures = 0
+            source_row.last_fetched_count = len(batch)
             batch = dedupe_raw_jobs(list(batch))
             seen_in_batch: set[str] = set()
             for raw in batch:
@@ -584,70 +676,69 @@ async def sync_public_jobs(db: Session) -> dict[str, Any]:
                 if dkey in seen_in_batch:
                     continue
                 seen_in_batch.add(dkey)
-                sources_with_data.add(raw.source)
-                before = (
-                    db.query(JobListing)
-                    .filter(
-                        JobListing.source == raw.source,
-                        JobListing.external_id == raw.external_id,
-                        JobListing.scope_key == "public",
-                    )
-                    .one_or_none()
-                )
+                before = db.query(JobListing).filter(
+                    JobListing.source == raw.source,
+                    JobListing.external_id == raw.external_id,
+                    JobListing.scope_key == "public",
+                ).one_or_none()
                 was_closed = bool(before and not before.is_active)
                 canon = (raw.url or "").split("?")[0].rstrip("/").lower()
                 existing_by_url = url_index.get(canon) if canon else None
                 if existing_by_url and not before:
-                    was_closed = not existing_by_url.is_active
-                    existing_by_url.title = raw.title
-                    existing_by_url.company = raw.company or existing_by_url.company
-                    existing_by_url.location = raw.location or existing_by_url.location
-                    existing_by_url.description = (
-                        raw.description or existing_by_url.description
-                    )
-                    existing_by_url.salary = raw.salary or existing_by_url.salary
-                    existing_by_url.is_active = True
-                    existing_by_url.closed_at = None
-                    existing_by_url.last_seen_at = datetime.utcnow()
-                    updated += 1
-                    if was_closed:
-                        reopened += 1
-                    continue
-
-                listing = upsert_public_listing(db, raw)
-                if before:
+                    listing = existing_by_url
+                    was_closed = not listing.is_active
+                    listing.title = raw.title or listing.title
+                    listing.company = raw.company or listing.company
+                    listing.location = raw.location or listing.location
+                    listing.description = raw.description or listing.description
+                    listing.salary = raw.salary or listing.salary
+                    listing.normalized_location = raw.normalized_location or raw.location or listing.normalized_location
+                    listing.employment_type = raw.employment_type or listing.employment_type
+                    listing.remote_type = raw.remote_type or listing.remote_type
+                    listing.experience_level = raw.experience_level or listing.experience_level
+                    listing.salary_min = raw.salary_min if raw.salary_min is not None else listing.salary_min
+                    listing.salary_max = raw.salary_max if raw.salary_max is not None else listing.salary_max
+                    listing.salary_currency = raw.salary_currency or listing.salary_currency
+                    listing.posted_at = raw.posted_at or listing.posted_at
+                    listing.expires_at = raw.expires_at or listing.expires_at
+                    listing.source_updated_at = raw.source_updated_at or listing.source_updated_at
+                    listing.is_active = True
+                    listing.closed_at = None
+                    listing.last_seen_at = datetime.utcnow()
                     updated += 1
                     if was_closed:
                         reopened += 1
                 else:
-                    created += 1
-                    if canon:
-                        url_index[canon] = listing
+                    listing = upsert_public_listing(db, raw, source_key=label)
+                    if before:
+                        updated += 1
+                        if was_closed:
+                            reopened += 1
+                    else:
+                        created += 1
+                        if canon:
+                            url_index[canon] = listing
+                db.flush()
+                _upsert_source_record(db, source_row, listing, raw)
 
             fetched += len(batch)
+            source_results[label] = {"ok": True, "fetched": len(batch)}
             db.commit()
-            mark_sync_progress(
-                source=label,
-                fetched=fetched,
-                created=created,
-                updated=updated,
-            )
+            mark_sync_progress(source=label, fetched=fetched, created=created, updated=updated)
 
-        closed = 0
-        if sources_with_data:
-            closed = close_missing_public_listings(
-                db, sync_started_at, sources=sources_with_data
-            )
-            db.commit()
+        closed = close_missing_public_listings(db, sync_started_at, sources=successful_sources)
+        db.commit()
         result = {
             "fetched": fetched,
             "created": created,
             "updated": updated,
             "reopened": reopened,
             "closed": closed,
+            "failed_sources": failed,
+            "sources": source_results,
             "rescored": 0,
         }
-        mark_sync_finished(ok=True, result=result)
+        mark_sync_finished(ok=failed == 0, result=result, error="One or more sources failed" if failed else "")
         return result
     except Exception as exc:
         db.rollback()
@@ -686,6 +777,18 @@ async def add_pasted_job_for_user(
         url=raw.url,
         description=raw.description,
         salary=raw.salary,
+        canonical_key=(raw.url or raw.external_id).split("?")[0].rstrip("/").lower()[:128],
+        source_key="paste",
+        normalized_location=raw.normalized_location or raw.location,
+        employment_type=raw.employment_type,
+        remote_type=raw.remote_type,
+        experience_level=raw.experience_level,
+        salary_min=raw.salary_min,
+        salary_max=raw.salary_max,
+        salary_currency=raw.salary_currency,
+        posted_at=raw.posted_at,
+        expires_at=raw.expires_at,
+        source_updated_at=raw.source_updated_at,
         visibility=ListingVisibility.PRIVATE.value,
         scope_key=str(user.id),
         owner_user_id=user.id,

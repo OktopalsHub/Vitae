@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
+import logging
+import time
 
 from app.config import get_settings
+from app.ai.safety import AI_SAFETY_SYSTEM
 from app.crypto import decrypt_secret
 from app.llm_providers import PLATFORM_PROVIDERS, ProviderSpec, get_provider
 
@@ -10,6 +14,8 @@ from app.llm_providers import PLATFORM_PROVIDERS, ProviderSpec, get_provider
 # with 2 retries — one bad endpoint could stall a request for 30 minutes.
 LLM_TIMEOUT_SECONDS = 90.0
 LLM_MAX_RETRIES = 1
+DEFAULT_PROMPT_VERSION = "v1"
+logger = logging.getLogger(__name__)
 
 # Gemini 2.0 Flash shut down 2026-06-01. Remap so stale .env / Cloud vars still work.
 _RETIRED_GEMINI_MODELS = {
@@ -128,6 +134,42 @@ def active_llm_name(creds: LLMCreds | None = None) -> str:
     return c.provider if c else ""
 
 
+def _record_request(
+    *,
+    provider: str,
+    model: str,
+    purpose: str,
+    prompt_version: str,
+    status: str,
+    latency_ms: int,
+    input_chars: int,
+    output_chars: int,
+    error_type: str | None = None,
+) -> None:
+    """Persist call metadata without storing prompts, responses, or secrets."""
+    try:
+        from app.db import SessionLocal
+        from app.models import LLMRequest
+
+        with SessionLocal() as db:
+            db.add(
+                LLMRequest(
+                    provider=provider[:64],
+                    model=model[:128],
+                    purpose=purpose[:64] or "unspecified",
+                    prompt_version=prompt_version[:64] or DEFAULT_PROMPT_VERSION,
+                    status=status[:32],
+                    latency_ms=max(0, latency_ms),
+                    input_chars=max(0, input_chars),
+                    output_chars=max(0, output_chars),
+                    error_type=(error_type or "")[:128] or None,
+                )
+            )
+            db.commit()
+    except Exception as exc:
+        logger.warning("Could not persist LLM telemetry: %s", exc)
+
+
 async def llm_complete(
     *,
     prompt: str,
@@ -136,19 +178,52 @@ async def llm_complete(
     max_tokens: int = 4000,
     temperature: float = 0.3,
     creds: LLMCreds | None = None,
+    purpose: str = "unspecified",
+    prompt_version: str = DEFAULT_PROMPT_VERSION,
 ) -> str:
-    """Call the configured LLM. Raises RuntimeError if no key is set."""
+    """Single LLM gateway with safety policy, bounded calls, and privacy-safe telemetry."""
     c = creds or platform_creds()
     if not c:
         raise RuntimeError(
             "No LLM API key configured. Use platform keys or a BYOK key in Settings."
         )
 
-    if c.kind == "anthropic":
-        return await _anthropic(c, prompt, system, max_tokens, temperature, json_mode)
-    if c.kind == "gemini":
-        return await _gemini(c, prompt, system, json_mode, max_tokens, temperature)
-    return await _openai_compatible(c, prompt, system, json_mode, temperature)
+    safe_system = ((system.strip() + "\n\n") if system.strip() else "") + AI_SAFETY_SYSTEM
+    started = time.monotonic()
+    try:
+        if c.kind == "anthropic":
+            result = await _anthropic(c, prompt, safe_system, max_tokens, temperature, json_mode)
+        elif c.kind == "gemini":
+            result = await _gemini(c, prompt, safe_system, json_mode, max_tokens, temperature)
+        else:
+            result = await _openai_compatible(c, prompt, safe_system, json_mode, temperature)
+    except Exception as exc:
+        await asyncio.to_thread(
+            _record_request,
+            provider=c.provider,
+            model=c.model,
+            purpose=purpose,
+            prompt_version=prompt_version,
+            status="error",
+            latency_ms=int((time.monotonic() - started) * 1000),
+            input_chars=len(prompt) + len(safe_system),
+            output_chars=0,
+            error_type=type(exc).__name__,
+        )
+        raise
+
+    await asyncio.to_thread(
+        _record_request,
+        provider=c.provider,
+        model=c.model,
+        purpose=purpose,
+        prompt_version=prompt_version,
+        status="success",
+        latency_ms=int((time.monotonic() - started) * 1000),
+        input_chars=len(prompt) + len(safe_system),
+        output_chars=len(result),
+    )
+    return result
 
 
 async def _openai_compatible(

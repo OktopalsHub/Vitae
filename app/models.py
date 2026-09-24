@@ -55,7 +55,7 @@ class User(SQLAlchemyBaseUserTableUUID, Base):
     full_name: Mapped[str] = mapped_column(String(255), default="", nullable=False)
     role: Mapped[str] = mapped_column(String(32), default=UserRole.BASIC.value, index=True)
     # Points at profiles.id — each profile has its own subscription (ProfileBilling).
-    active_profile_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, index=True)
+    active_profile_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("profiles.id", ondelete="SET NULL"), nullable=True, index=True)
     oauth_accounts: Mapped[list["OAuthAccount"]] = relationship(
         "OAuthAccount", lazy="joined", cascade="all, delete-orphan"
     )
@@ -87,6 +87,18 @@ class JobListing(Base):
     url: Mapped[str] = mapped_column(String(1024), default="")
     description: Mapped[str] = mapped_column(Text, default="")
     salary: Mapped[str] = mapped_column(String(255), default="")
+    canonical_key: Mapped[str] = mapped_column(String(128), default="", index=True)
+    source_key: Mapped[str] = mapped_column(String(128), default="", index=True)
+    normalized_location: Mapped[str] = mapped_column(String(255), default="", index=True)
+    employment_type: Mapped[str] = mapped_column(String(64), default="", index=True)
+    remote_type: Mapped[str] = mapped_column(String(64), default="", index=True)
+    experience_level: Mapped[str] = mapped_column(String(64), default="", index=True)
+    salary_min: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    salary_max: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    salary_currency: Mapped[str] = mapped_column(String(16), default="")
+    posted_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True, index=True)
+    expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True, index=True)
+    source_updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     visibility: Mapped[str] = mapped_column(
         String(16), default=ListingVisibility.PUBLIC.value, index=True
     )
@@ -104,6 +116,47 @@ class JobListing(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
     )
+
+
+class JobSource(Base):
+    """Configured ingest source and its latest health state."""
+
+    __tablename__ = "job_sources"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    key: Mapped[str] = mapped_column(String(128), unique=True, nullable=False, index=True)
+    display_name: Mapped[str] = mapped_column(String(255), default="")
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    last_started_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    last_success_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    last_error_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    last_error: Mapped[str] = mapped_column(Text, default="")
+    consecutive_failures: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    last_fetched_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class JobSourceRecord(Base):
+    """Source-specific provenance for a canonical job listing."""
+
+    __tablename__ = "job_source_records"
+    __table_args__ = (
+        UniqueConstraint("source_id", "external_id", name="uq_job_source_external"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    source_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("job_sources.id", ondelete="cascade"), nullable=False, index=True
+    )
+    listing_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("job_listings.id", ondelete="cascade"), nullable=False, index=True
+    )
+    external_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    payload_json: Mapped[str] = mapped_column(Text, default="{}")
+    first_seen_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False, index=True)
 
 
 class Profile(Base):
@@ -203,6 +256,26 @@ class ApplyDraft(Base):
     )
 
 
+class LLMRequest(Base):
+    """Durable, privacy-safe metadata for an LLM call. Prompt/response bodies are never stored."""
+
+    __tablename__ = "llm_requests"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    provider: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    model: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    purpose: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    prompt_version: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    latency_ms: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    input_chars: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    output_chars: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    input_tokens: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    output_tokens: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    error_type: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+
 class ListingMatchScore(Base):
     """Persisted browse-rank score for a profile×listing (not a UserJob overlay)."""
 
@@ -220,6 +293,8 @@ class ListingMatchScore(Base):
     )
     match_score: Mapped[float] = mapped_column(Float, default=0.0, index=True)
     match_reasons: Mapped[str] = mapped_column(Text, default="")
+    breakdown_json: Mapped[str] = mapped_column(Text, default="{}")
+    algorithm_version: Mapped[str] = mapped_column(String(32), default="v2", index=True)
     fingerprint: Mapped[str] = mapped_column(String(64), default="", index=True)
     scored_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
 
@@ -246,6 +321,281 @@ class ProfileBilling(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
     )
+
+
+class ProfileExperience(Base):
+    __tablename__ = "profile_experiences"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    profile_id: Mapped[int] = mapped_column(Integer, ForeignKey("profiles.id", ondelete="cascade"), nullable=False, index=True)
+    position: Mapped[str] = mapped_column(String(255), default="")
+    company: Mapped[str] = mapped_column(String(255), default="")
+    location: Mapped[str] = mapped_column(String(255), default="")
+    start_date: Mapped[str] = mapped_column(String(64), default="")
+    end_date: Mapped[str] = mapped_column(String(64), default="")
+    description: Mapped[str] = mapped_column(Text, default="")
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class ProfileEducation(Base):
+    __tablename__ = "profile_education"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    profile_id: Mapped[int] = mapped_column(Integer, ForeignKey("profiles.id", ondelete="cascade"), nullable=False, index=True)
+    institution: Mapped[str] = mapped_column(String(255), default="")
+    degree: Mapped[str] = mapped_column(String(255), default="")
+    field_of_study: Mapped[str] = mapped_column(String(255), default="")
+    start_date: Mapped[str] = mapped_column(String(64), default="")
+    end_date: Mapped[str] = mapped_column(String(64), default="")
+    description: Mapped[str] = mapped_column(Text, default="")
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class ProfileSkill(Base):
+    __tablename__ = "profile_skills"
+    __table_args__ = (UniqueConstraint("profile_id", "name", name="uq_profile_skill"),)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    profile_id: Mapped[int] = mapped_column(Integer, ForeignKey("profiles.id", ondelete="cascade"), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    category: Mapped[str] = mapped_column(String(64), default="")
+    proficiency: Mapped[str] = mapped_column(String(64), default="")
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class ProfileProject(Base):
+    __tablename__ = "profile_projects"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    profile_id: Mapped[int] = mapped_column(Integer, ForeignKey("profiles.id", ondelete="cascade"), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(255), default="")
+    description: Mapped[str] = mapped_column(Text, default="")
+    url: Mapped[str] = mapped_column(String(1024), default="")
+    technologies: Mapped[str] = mapped_column(Text, default="[]")
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class ProfileCertification(Base):
+    __tablename__ = "profile_certifications"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    profile_id: Mapped[int] = mapped_column(Integer, ForeignKey("profiles.id", ondelete="cascade"), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(255), default="")
+    issuer: Mapped[str] = mapped_column(String(255), default="")
+    issue_date: Mapped[str] = mapped_column(String(64), default="")
+    expiry_date: Mapped[str] = mapped_column(String(64), default="")
+    credential_url: Mapped[str] = mapped_column(String(1024), default="")
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class ProfilePreference(Base):
+    __tablename__ = "profile_preferences"
+    profile_id: Mapped[int] = mapped_column(Integer, ForeignKey("profiles.id", ondelete="cascade"), primary_key=True)
+    preferred_locations: Mapped[str] = mapped_column(Text, default="[]")
+    remote_only: Mapped[bool] = mapped_column(Boolean, default=False)
+    employment_types: Mapped[str] = mapped_column(Text, default="[]")
+    target_titles: Mapped[str] = mapped_column(Text, default="[]")
+    min_salary: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    currency: Mapped[str] = mapped_column(String(16), default="")
+    work_authorization: Mapped[str] = mapped_column(String(512), default="")
+
+
+class Document(Base):
+    __tablename__ = "documents"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("users.id", ondelete="cascade"), nullable=False, index=True)
+    profile_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("profiles.id", ondelete="cascade"), nullable=True, index=True)
+    kind: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    storage_key: Mapped[str] = mapped_column(String(1024), nullable=False, unique=True)
+    original_filename: Mapped[str] = mapped_column(String(512), default="")
+    content_type: Mapped[str] = mapped_column(String(255), default="")
+    size_bytes: Mapped[int] = mapped_column(Integer, default=0)
+    checksum: Mapped[str] = mapped_column(String(128), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class ResumeVersion(Base):
+    """Immutable record of a CV upload plus the structured extraction produced from it."""
+
+    __tablename__ = "resume_versions"
+    __table_args__ = (UniqueConstraint("profile_id", "version", name="uq_resume_version"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    profile_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("profiles.id", ondelete="cascade"), nullable=False, index=True
+    )
+    source_document_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("documents.id", ondelete="set null"), nullable=True
+    )
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    parser_name: Mapped[str] = mapped_column(String(64), default="vitae-cv-parser")
+    extraction_version: Mapped[str] = mapped_column(String(64), default="1")
+    extracted_profile_json: Mapped[str] = mapped_column(Text, default="{}")
+    status: Mapped[str] = mapped_column(String(32), default="active", index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+
+class ResumeGeneration(Base):
+    """Immutable record of one tailored resume generation."""
+
+    __tablename__ = "resume_generations"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("users.id", ondelete="cascade"), nullable=False, index=True)
+    profile_id: Mapped[int] = mapped_column(Integer, ForeignKey("profiles.id", ondelete="cascade"), nullable=False, index=True)
+    listing_id: Mapped[int] = mapped_column(Integer, ForeignKey("job_listings.id", ondelete="cascade"), nullable=False, index=True)
+    source_resume_version_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("resume_versions.id", ondelete="set null"), nullable=True, index=True)
+    generator_version: Mapped[str] = mapped_column(String(64), nullable=False, default="resume.v1")
+    prompt_version: Mapped[str] = mapped_column(String(64), nullable=False, default="cv_tailor.v2")
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="completed", index=True)
+    used_fallback: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    output_dir: Mapped[str] = mapped_column(String(1024), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+
+class ResumeArtifact(Base):
+    """One immutable output file belonging to a resume generation."""
+
+    __tablename__ = "resume_artifacts"
+    __table_args__ = (UniqueConstraint("generation_id", "format", name="uq_resume_artifact_format"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    generation_id: Mapped[int] = mapped_column(Integer, ForeignKey("resume_generations.id", ondelete="cascade"), nullable=False, index=True)
+    format: Mapped[str] = mapped_column(String(16), nullable=False)
+    storage_key: Mapped[str] = mapped_column(String(1024), nullable=False, unique=True)
+    filename: Mapped[str] = mapped_column(String(512), nullable=False)
+    content_type: Mapped[str] = mapped_column(String(255), nullable=False)
+    size_bytes: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    checksum: Mapped[str] = mapped_column(String(128), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+
+class AutoApplyRunStatus(str, Enum):
+    QUEUED = "queued"
+    RUNNING = "running"
+    PAUSED = "paused"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+
+
+class AutoApplyItemStatus(str, Enum):
+    QUEUED = "queued"
+    PREPARING = "preparing"
+    READY = "ready"
+    SUBMITTED = "submitted"
+    SKIPPED = "skipped"
+    FAILED = "failed"
+    NEEDS_REVIEW = "needs_review"
+
+
+class AutoApplyRun(Base):
+    """Durable, user-controlled batch of application preparation/submission work."""
+
+    __tablename__ = "auto_apply_runs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("users.id", ondelete="cascade"), nullable=False, index=True)
+    profile_id: Mapped[int] = mapped_column(Integer, ForeignKey("profiles.id", ondelete="cascade"), nullable=False, index=True)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default=AutoApplyRunStatus.QUEUED.value, index=True)
+    max_applications: Mapped[int] = mapped_column(Integer, nullable=False, default=10)
+    prepared_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    submitted_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    failed_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    requires_review: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False, unique=True)
+    started_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+
+class AutoApplyItem(Base):
+    """One job in an auto-apply run. Keeps preparation separate from external submission."""
+
+    __tablename__ = "auto_apply_items"
+    __table_args__ = (
+        UniqueConstraint("run_id", "listing_id", name="uq_auto_apply_run_listing"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    run_id: Mapped[int] = mapped_column(Integer, ForeignKey("auto_apply_runs.id", ondelete="cascade"), nullable=False, index=True)
+    application_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("applications.id", ondelete="set null"), nullable=True, index=True)
+    listing_id: Mapped[int] = mapped_column(Integer, ForeignKey("job_listings.id", ondelete="cascade"), nullable=False, index=True)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default=AutoApplyItemStatus.QUEUED.value, index=True)
+    attempt_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    requires_review: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    review_reason: Mapped[str] = mapped_column(Text, default="")
+    last_error: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+
+class ApplicationStatus(str, Enum):
+    DRAFT = "draft"
+    READY = "ready"
+    SUBMITTED = "submitted"
+    SCREENING = "screening"
+    INTERVIEW = "interview"
+    OFFER = "offer"
+    REJECTED = "rejected"
+    WITHDRAWN = "withdrawn"
+
+
+class Application(Base):
+    """Durable application record for one profile and one job listing."""
+
+    __tablename__ = "applications"
+    __table_args__ = (
+        UniqueConstraint("profile_id", "listing_id", name="uq_application_profile_listing"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("users.id", ondelete="cascade"), nullable=False, index=True
+    )
+    profile_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("profiles.id", ondelete="cascade"), nullable=False, index=True
+    )
+    listing_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("job_listings.id", ondelete="set null"), nullable=True, index=True
+    )
+    resume_artifact_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("resume_artifacts.id", ondelete="set null"), nullable=True, index=True
+    )
+    status: Mapped[str] = mapped_column(
+        String(32), nullable=False, default=ApplicationStatus.DRAFT.value, index=True
+    )
+    channel: Mapped[str] = mapped_column(String(32), nullable=False, default="manual")
+    external_url: Mapped[str] = mapped_column(String(1024), default="")
+    external_application_id: Mapped[str] = mapped_column(String(255), default="")
+    cover_blurb: Mapped[str] = mapped_column(Text, default="")
+    answers_json: Mapped[str] = mapped_column(Text, default="[]")
+    notes: Mapped[str] = mapped_column(Text, default="")
+    applied_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True, index=True)
+    last_status_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+    )
+
+
+class ApplicationEvent(Base):
+    """Append-only application lifecycle history."""
+
+    __tablename__ = "application_events"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    application_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("applications.id", ondelete="cascade"), nullable=False, index=True
+    )
+    from_status: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
+    to_status: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    note: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+
 
 
 @dataclass

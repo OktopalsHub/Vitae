@@ -29,7 +29,24 @@ def _source_enabled(cfg: dict[str, Any], name: str, default: bool = True) -> boo
 
 
 async def iter_fetch_sources(cfg: dict[str, Any], settings: Any):
-    """Yield (source_label, jobs) per board so sync can commit incrementally."""
+    """Backward-compatible source iterator; failed sources yield an empty batch."""
+    async for _label, ok, jobs, _error in iter_fetch_source_results(cfg, settings):
+        yield _label, jobs if ok else []
+
+
+
+async def iter_fetch_source_results(cfg: dict[str, Any], settings: Any):
+    """Yield source health + jobs without turning one failed source into a failed sync."""
+    async for label, fetcher in _source_jobs(cfg, settings):
+        try:
+            jobs = await fetcher()
+            yield label, True, jobs, ""
+        except Exception as exc:  # noqa: BLE001 - one source must not stop the catalogue
+            yield label, False, [], str(exc)
+
+
+async def _source_jobs(cfg: dict[str, Any], settings: Any):
+    """Build lazy source fetch callables so each source has an isolated failure boundary."""
     search = cfg.get("search") or {}
     queries = list(search.get("queries") or ["software", "engineer", "developer", "remote"])
     max_per = int(search.get("max_results_per_source") or 100)
@@ -38,69 +55,46 @@ async def iter_fetch_sources(cfg: dict[str, Any], settings: Any):
     if search.get("apply_exclude_patterns"):
         excludes = list(cfg.get("exclude_title_patterns") or [])
 
-    yield (
-        "adzuna",
-        await fetch_adzuna(
-            settings.adzuna_app_id,
-            settings.adzuna_app_key,
-            queries,
-            country=adzuna_cfg.get("country") or "gb",
-            results_per_page=int(adzuna_cfg.get("results_per_page") or 50),
-            max_results=max_per,
-            excludes=excludes,
-        ),
+    yield "adzuna", lambda: fetch_adzuna(
+        settings.adzuna_app_id, settings.adzuna_app_key, queries,
+        country=adzuna_cfg.get("country") or "gb",
+        results_per_page=int(adzuna_cfg.get("results_per_page") or 50),
+        max_results=max_per, excludes=excludes,
     )
-    yield ("remoteok", await fetch_remoteok(max_per, excludes))
-    yield ("remotive", await fetch_remotive(max_per, excludes))
-    yield ("arbeitnow", await fetch_arbeitnow(max_per, excludes))
-    yield ("jobicy", await fetch_jobicy(max_per, excludes))
-    yield (
-        "jooble",
-        await fetch_jooble(
-            getattr(settings, "jooble_api_key", "") or "",
-            queries,
-            max_per,
-            excludes,
-        ),
+    yield "remoteok", lambda: fetch_remoteok(max_per, excludes)
+    yield "remotive", lambda: fetch_remotive(max_per, excludes)
+    yield "arbeitnow", lambda: fetch_arbeitnow(max_per, excludes)
+    yield "jobicy", lambda: fetch_jobicy(max_per, excludes)
+    yield "jooble", lambda: fetch_jooble(
+        getattr(settings, "jooble_api_key", "") or "", queries, max_per, excludes
     )
-
     for board in cfg.get("greenhouse_boards") or []:
-        yield (f"greenhouse:{board}", await fetch_greenhouse(board, max_per, excludes))
+        yield f"greenhouse:{board}", lambda board=board: fetch_greenhouse(board, max_per, excludes)
     for site in cfg.get("lever_boards") or []:
-        yield (f"lever:{site}", await fetch_lever(site, max_per, excludes))
+        yield f"lever:{site}", lambda site=site: fetch_lever(site, max_per, excludes)
     if _source_enabled(cfg, "ashby", True):
         for board in cfg.get("ashby_boards") or []:
-            yield (f"ashby:{board}", await fetch_ashby(board, max_per, excludes))
+            yield f"ashby:{board}", lambda board=board: fetch_ashby(board, max_per, excludes)
     if _source_enabled(cfg, "bruntwork", True):
-        yield ("bruntwork", await fetch_bruntwork(max_per, excludes))
-
+        yield "bruntwork", lambda: fetch_bruntwork(max_per, excludes)
     if _source_enabled(cfg, "yc", True):
-        yield ("yc", await fetch_yc(max_per, excludes))
+        yield "yc", lambda: fetch_yc(max_per, excludes)
     if _source_enabled(cfg, "wellfound", True):
-        yield (
-            "wellfound",
-            await fetch_wellfound(
-                list(cfg.get("wellfound_urls") or []),
-                max_per,
-                excludes,
-            ),
+        yield "wellfound", lambda: fetch_wellfound(
+            list(cfg.get("wellfound_urls") or []), max_per, excludes
         )
     if _source_enabled(cfg, "ziprecruiter", False):
-        yield ("ziprecruiter", await fetch_ziprecruiter(queries, max_per, excludes))
+        yield "ziprecruiter", lambda: fetch_ziprecruiter(queries, max_per, excludes)
     if _source_enabled(cfg, "djinni", True):
-        yield (
-            "djinni",
-            await fetch_djinni(
-                max_per,
-                excludes,
-                list(cfg.get("djinni_urls") or []) or None,
-            ),
+        yield "djinni", lambda: fetch_djinni(
+            max_per, excludes, list(cfg.get("djinni_urls") or []) or None
         )
 
 
 async def fetch_all_sources(cfg: dict[str, Any], settings: Any) -> list[RawJob]:
-    """Pull catalogue candidates from every enabled board — no role/stack gate."""
+    """Pull catalogue candidates from every enabled board — failed sources are isolated."""
     results: list[RawJob] = []
-    async for _label, batch in iter_fetch_sources(cfg, settings):
-        results.extend(batch)
+    async for _label, ok, batch, _error in iter_fetch_source_results(cfg, settings):
+        if ok:
+            results.extend(batch)
     return dedupe_raw_jobs(results)

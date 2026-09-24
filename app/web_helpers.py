@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import io
 import time
+import zipfile
 import uuid
 from pathlib import Path
 from urllib.parse import quote, urlparse
@@ -339,9 +341,23 @@ def validate_upload_content(filename: str, content: bytes) -> None:
             raise ValueError("File content is not a valid PDF")
         return
     if lower.endswith(".docx"):
-        # DOCX is a ZIP package (PK\x03\x04 or empty-archive PK\x05\x06).
+        # DOCX is a ZIP package. Inspect it before parsing to limit zip bombs.
         if len(content) < 4 or content[:2] != b"PK":
             raise ValueError("File content is not a valid DOCX")
+        try:
+            with zipfile.ZipFile(io.BytesIO(content)) as archive:
+                members = archive.infolist()
+                if len(members) > 500:
+                    raise ValueError("DOCX contains too many archive entries")
+                total_uncompressed = sum(max(0, item.file_size) for item in members)
+                if total_uncompressed > 32 * 1024 * 1024:
+                    raise ValueError("DOCX expands beyond the allowed size")
+                if any(item.filename.startswith(("/", "\\")) or ".." in Path(item.filename).parts for item in members):
+                    raise ValueError("DOCX contains unsafe archive paths")
+                if "word/document.xml" not in archive.namelist():
+                    raise ValueError("DOCX document payload is missing")
+        except zipfile.BadZipFile as exc:
+            raise ValueError("File content is not a valid DOCX") from exc
         return
     raise ValueError("Upload a PDF or DOCX file")
 

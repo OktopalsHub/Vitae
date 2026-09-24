@@ -11,7 +11,7 @@ from typing import Any
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.matching.scorer import reasons_to_json, score_job
+from app.matching.scorer import MATCHING_ALGORITHM_VERSION, reasons_to_json, score_job_versioned
 from app.models import ListingMatchScore
 
 log = logging.getLogger(__name__)
@@ -30,6 +30,7 @@ def score_fingerprint(profile: dict[str, Any], cfg: dict[str, Any]) -> str:
         "title_keywords": cfg.get("title_keywords") or [],
         "penalty_keywords": cfg.get("penalty_keywords") or [],
         "exclude_title_patterns": cfg.get("exclude_title_patterns") or [],
+        "algorithm_version": MATCHING_ALGORITHM_VERSION,
     }
     raw = json.dumps(payload, sort_keys=True, default=str)
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:40]
@@ -51,9 +52,13 @@ def ranking_payload(listing: Any) -> dict[str, Any]:
 
 def score_listing_cached(
     listing: Any, profile: dict[str, Any], cfg: dict[str, Any]
-) -> tuple[float, str]:
-    score, reasons = score_job(ranking_payload(listing), profile, cfg)
-    return float(score), reasons_to_json(reasons)
+) -> tuple[float, str, str]:
+    result = score_job_versioned(ranking_payload(listing), profile, cfg)
+    return (
+        float(result["score"]),
+        reasons_to_json(result["reasons"]),
+        json.dumps(result, ensure_ascii=False),
+    )
 
 
 def upsert_match_score(
@@ -63,7 +68,9 @@ def upsert_match_score(
     listing_id: int,
     match_score: float,
     match_reasons: str,
-    fingerprint: str,
+    breakdown_json: str = "{}",
+    algorithm_version: str = MATCHING_ALGORITHM_VERSION,
+    fingerprint: str = "",
     existing: ListingMatchScore | None = None,
 ) -> ListingMatchScore:
     row = existing
@@ -83,6 +90,8 @@ def upsert_match_score(
             listing_id=listing_id,
             match_score=match_score,
             match_reasons=match_reasons or "",
+            breakdown_json=breakdown_json or "{}",
+            algorithm_version=algorithm_version,
             fingerprint=fingerprint,
             scored_at=now,
         )
@@ -106,12 +115,16 @@ def upsert_match_score(
             )
             row.match_score = match_score
             row.match_reasons = match_reasons or ""
+            row.breakdown_json = breakdown_json or "{}"
+            row.algorithm_version = algorithm_version
             row.fingerprint = fingerprint
             row.scored_at = now
             db.flush()
     else:
         row.match_score = match_score
         row.match_reasons = match_reasons or ""
+        row.breakdown_json = breakdown_json or "{}"
+        row.algorithm_version = algorithm_version
         row.fingerprint = fingerprint
         row.scored_at = now
     return row

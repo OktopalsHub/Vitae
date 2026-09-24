@@ -1,8 +1,31 @@
-from __future__ import annotations
+MATCHING_ALGORITHM_VERSION = "v2"
+
+
+def score_job_versioned(
+    job: dict[str, Any], profile: dict[str, Any], cfg: dict[str, Any]
+) -> dict[str, Any]:
+    """Return a stable, explainable matching result with an explicit algorithm version."""
+    detail = score_job_detail(job, profile, cfg)
+    return {
+        "algorithm_version": MATCHING_ALGORITHM_VERSION,
+        "score": float(detail["score"]),
+        "reasons": list(detail["reasons"]),
+        "positives": list(detail["positives"]),
+        "penalties": list(detail["penalties"]),
+        "skill_hits": list(detail["skill_hits"]),
+        "skill_gaps": list(detail["skill_gaps"]),
+        "jd_stack": list(detail["jd_stack"]),
+        "foreign_stack": list(detail["foreign_stack"]),
+        "connection_summary": detail["connection_summary"],
+    }
+
+
 
 import json
 import re
 from typing import Any
+
+from __future__ import annotations
 
 from app.matching.filters import (
     has_strong_title_signal,

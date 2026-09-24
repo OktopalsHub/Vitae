@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}Applications · Vitae{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <p class="eyebrow">Application tracker</p>
+    <h1>Applications</h1>
+    <p class="meta">Keep the submitted resume, answers, status and follow-up history together.</p>
+  </div>
+  <a class="btn" href="/jobs">Find jobs</a>
+</div>
+
+<div class="chip-list" style="margin:var(--s4) 0">
+  <a class="btn {% if not status %}btn-primary{% endif %}" href="/applications">All</a>
+  {% for item in statuses %}
+  <a class="btn {% if status == item %}btn-primary{% endif %}" href="/applications?status={{ item }}">{{ item.replace('_', ' ')|title }}</a>
+  {% endfor %}
+</div>
+
+<div class="panel">
+  {% if applications %}
+  <div class="application-list">
+    {% for item in applications %}
+    <article class="application-row">
+      <div>
+        <h3 style="margin:0">
+          {% if item.listing %}
+          <a href="/jobs/{{ item.listing.public_id }}">{{ item.listing.title }}</a>
+          {% else %}
+          Job no longer available
+          {% endif %}
+        </h3>
+        {% if item.listing and item.listing.company %}
+        <p class="meta" style="margin:var(--s1) 0">{{ item.listing.company }}{% if item.listing.location %} · {{ item.listing.location }}{% endif %}</p>
+        {% endif %}
+      </div>
+      <div class="actions">
+        <span class="badge {{ item.application.status }}">{{ item.application.status.replace('_', ' ') }}</span>
+        <a class="btn" href="/applications/{{ item.application.id }}">Open</a>
+      </div>
+    </article>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="empty-state">
+    <h3>No applications yet</h3>
+    <p class="meta">Open a job and save it to your application tracker after preparing your CV and answers.</p>
+    <a class="btn btn-primary" href="/jobs">Browse jobs</a>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

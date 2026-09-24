@@ -25,7 +25,8 @@ from fastapi.testclient import TestClient  # noqa: E402
 
 from app.config import get_settings  # noqa: E402
 from app.csrf import CSRF_COOKIE  # noqa: E402
-from app.db import SessionLocal, init_db  # noqa: E402
+from app.db import SessionLocal, engine  # noqa: E402
+from app.models import Base  # noqa: E402
 from app.main import app  # noqa: E402
 from app.models import User  # noqa: E402
 from app.accounts import ensure_account, get_active_profile  # noqa: E402
@@ -34,7 +35,7 @@ from app.accounts import ensure_account, get_active_profile  # noqa: E402
 @pytest.fixture(scope="session", autouse=True)
 def _init_test_db():
     get_settings.cache_clear()
-    init_db()
+    Base.metadata.create_all(bind=engine)
     yield
 
 

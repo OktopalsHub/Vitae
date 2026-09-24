@@ -13,6 +13,8 @@ import re
 from typing import Any
 
 from app.llm import LLMCreds, has_llm, llm_complete
+from app.ai.contracts import ApplicationAnswers
+from app.ai.safety import sanitize_untrusted_text
 from app.generator.apply_prompts import APPLY_WRITING_SYSTEM, ASD_STE100_RULES
 from app.generator.apply_templates import (
     career_facts,
@@ -102,6 +104,8 @@ async def _llm_text(
             max_tokens=max_tokens,
             temperature=temperature,
             creds=creds,
+            purpose="application_copy",
+            prompt_version="application_copy.v2",
         )
         return text or fallback
     except Exception as exc:
@@ -157,8 +161,8 @@ async def generate_cover_blurb(
         "- Connect your experience to what the company actually builds or does.\n\n"
         f"{rewrite_bit}"
         f"{full_profile_context(apply_profile)}\n\n"
-        f"{job_meta(job)}\n"
-        f"{jd_analysis(job)}\n\n"
+        f"{sanitize_untrusted_text(job_meta(job))}\n"
+        f"{sanitize_untrusted_text(jd_analysis(job))}\n\n"
         "Write the cover note now. Return plain text only."
     )
     return await _llm_text(prompt, fallback, max_tokens=550, creds=creds, temperature=0.5)
@@ -225,7 +229,7 @@ async def generate_application_answers(
         return fallback
     try:
         data = _parse_llm_json(raw)
-        answers = data.get("answers") if isinstance(data, dict) else data
+        answers = [item.model_dump() for item in ApplicationAnswers.model_validate(data).answers]
         cleaned: list[dict[str, str]] = []
         if isinstance(answers, list):
             for item in answers:
