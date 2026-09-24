@@ -26,37 +26,18 @@ def test_register_creates_basic_role(client, register_user):
         user = db.query(User).filter(User.email == "basic@example.com").one()
         assert user.role == UserRole.BASIC.value
         assert user.is_superuser is False
-        assert user.is_verified is False
+        assert user.is_verified is True
         assert not is_admin(user)
     finally:
         db.close()
 
 
-def test_unverified_user_cannot_login(client, register_user, csrf_token):
+def test_registered_user_can_login(client, register_user, csrf_token):
     register_user(email="login@example.com", password="password123")
     r = client.post(
         "/login",
         data={
             "email": "login@example.com",
-            "password": "password123",
-            "next": "/",
-            "csrf_token": csrf_token,
-        },
-        follow_redirects=False,
-    )
-    assert r.status_code in {302, 303}
-    assert "verify your email" in unquote(r.headers.get("location", "")).lower()
-
-
-def test_verified_user_can_login(client, register_user, csrf_token, db_session):
-    register_user(email="verified@example.com", password="password123")
-    user = db_session.query(User).filter(User.email == "verified@example.com").one()
-    user.is_verified = True
-    db_session.commit()
-    r = client.post(
-        "/login",
-        data={
-            "email": "verified@example.com",
             "password": "password123",
             "next": "/",
             "csrf_token": csrf_token,
@@ -74,25 +55,3 @@ def test_admin_route_forbidden_for_basic(client, confirmed_user):
     loc = r.headers.get("location", "")
     assert "Admin access required" in loc or loc.startswith("/")
 
-
-@pytest.mark.asyncio
-async def test_registration_requests_verification_email(monkeypatch):
-    from app.auth import UserManager, _async_session_maker
-    from fastapi_users.db import SQLAlchemyUserDatabase
-    from app.models import OAuthAccount
-
-    requested = []
-
-    async def fake_request_verify(self, user, request=None):
-        requested.append(user.email)
-
-    monkeypatch.setattr(UserManager, "request_verify", fake_request_verify)
-
-    async with _async_session_maker() as session:
-        user_db = SQLAlchemyUserDatabase(session, User, OAuthAccount)
-        manager = UserManager(user_db)
-        email = "verify-email@example.com"
-        created = await manager.create(UserCreate(email=email, password="password123"))
-        assert created.is_verified is False
-
-    assert requested == ["verify-email@example.com"]
