@@ -25,7 +25,7 @@ from app.config import assert_secure_settings, ensure_dirs, get_settings, projec
 from app.csrf import CSRFMiddleware, cookie_secure_flag
 from app.db import assert_database_migrated
 from app.rate_limit import RateLimitExceeded, enforce
-from app.routes import admin, applications, auth_pages, billing, jobs, onboarding, profiles, settings, site
+from app.routes import auto_apply, admin, applications, auth_pages, billing, jobs, onboarding, profiles, settings, site
 from app.scheduler import start_catalogue_sync_task
 from app.web_helpers import LoginRequired, OnboardingRequired, ForbiddenFlash, safe_http_url
 
@@ -174,6 +174,7 @@ app.include_router(auth_pages.router)
 app.include_router(onboarding.router)
 app.include_router(jobs.router)
 app.include_router(applications.router)
+app.include_router(auto_apply.router)
 app.include_router(settings.router)
 app.include_router(profiles.router)
 app.include_router(billing.router)
