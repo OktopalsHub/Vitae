@@ -1,52 +1,51 @@
 {% extends "base.html" %}
 {% block title %}Applications · Vitae{% endblock %}
 {% block content %}
-<div class="page-head">
+<div class="page-head page-head--wide">
   <div>
     <p class="eyebrow">Application tracker</p>
-    <h1>Applications</h1>
-    <p class="meta">Keep the submitted resume, answers, status and follow-up history together.</p>
+    <h1>Keep every application in one place</h1>
+    <p class="lede">Your resume, answers, status and follow-up history stay attached to the job.</p>
   </div>
-  <a class="btn" href="/jobs">Find jobs</a>
+  <a class="btn btn-primary" href="/jobs">Find matching jobs</a>
 </div>
 
-<div class="chip-list" style="margin:var(--s4) 0">
-  <a class="btn {% if not status %}btn-primary{% endif %}" href="/applications">All</a>
+<nav class="status-tabs" aria-label="Application status">
+  <a class="status-tab {% if not status %}is-active{% endif %}" href="/applications">All</a>
   {% for item in statuses %}
-  <a class="btn {% if status == item %}btn-primary{% endif %}" href="/applications?status={{ item }}">{{ item.replace('_', ' ')|title }}</a>
+  <a class="status-tab {% if status == item %}is-active{% endif %}" href="/applications?status={{ item }}">{{ item.replace('_', ' ')|title }}</a>
   {% endfor %}
-</div>
+</nav>
 
-<div class="panel">
+<section class="application-board">
   {% if applications %}
-  <div class="application-list">
     {% for item in applications %}
-    <article class="application-row">
-      <div>
-        <h3 style="margin:0">
-          {% if item.listing %}
-          <a href="/jobs/{{ item.listing.public_id }}">{{ item.listing.title }}</a>
-          {% else %}
-          Job no longer available
-          {% endif %}
-        </h3>
-        {% if item.listing and item.listing.company %}
-        <p class="meta" style="margin:var(--s1) 0">{{ item.listing.company }}{% if item.listing.location %} · {{ item.listing.location }}{% endif %}</p>
-        {% endif %}
+    <article class="application-card">
+      <div class="application-card__main">
+        <div class="application-card__icon" aria-hidden="true">
+          {{ (item.listing.company if item.listing and item.listing.company else (item.listing.title if item.listing else "J"))[:1]|upper }}
+        </div>
+        <div>
+          <p class="kicker">{{ item.listing.company if item.listing and item.listing.company else "Job application" }}</p>
+          <h2>
+            {% if item.listing %}<a href="/jobs/{{ item.listing.public_id }}">{{ item.listing.title }}</a>{% else %}Job no longer available{% endif %}
+          </h2>
+          {% if item.listing and item.listing.location %}<p class="meta">{{ item.listing.location }}</p>{% endif %}
+        </div>
       </div>
-      <div class="actions">
-        <span class="badge {{ item.application.status }}">{{ item.application.status.replace('_', ' ') }}</span>
-        <a class="btn" href="/applications/{{ item.application.id }}">Open</a>
+      <div class="application-card__side">
+        <span class="badge {{ item.application.status }}">{{ item.application.status.replace('_', ' ')|title }}</span>
+        <a class="btn" href="/applications/{{ item.application.id }}">Open application</a>
       </div>
     </article>
     {% endfor %}
-  </div>
   {% else %}
-  <div class="empty-state">
-    <h3>No applications yet</h3>
-    <p class="meta">Open a job and save it to your application tracker after preparing your CV and answers.</p>
-    <a class="btn btn-primary" href="/jobs">Browse jobs</a>
-  </div>
+    <div class="panel empty-state">
+      <div class="empty-state__icon" aria-hidden="true">✓</div>
+      <h2>No applications in this view</h2>
+      <p class="meta">Open a matching job, prepare your application, then save it here.</p>
+      <a class="btn btn-primary" href="/jobs">Browse matching jobs</a>
+    </div>
   {% endif %}
-</div>
+</section>
 {% endblock %}
