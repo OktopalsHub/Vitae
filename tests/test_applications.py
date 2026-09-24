@@ -12,7 +12,7 @@ def _listing(db, user):
     row = JobListing(
         public_id=f"application-test-job-{user.id}",
         source="test",
-        external_id="application-test",
+        external_id=f"application-test-{user.id}",
         title="Backend Engineer",
         company="Acme",
         location="Remote",
