@@ -68,6 +68,7 @@ def claim_next_job(db: Session, *, queue: str = "default", lease_seconds: int = 
             ),
         )
         .order_by(WorkerJob.priority.desc(), WorkerJob.created_at.asc())
+        .with_for_update(skip_locked=True)
         .first()
     )
     if job is None:
