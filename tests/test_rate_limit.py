@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 import pytest
-from fastapi import Request
-
 from app.rate_limit import (
     RateLimitExceeded,
     check_rate_limit,
