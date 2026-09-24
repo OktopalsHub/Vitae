@@ -50,7 +50,9 @@ async def run_worker(queue: str = "default", poll_seconds: float = 2.0) -> None:
                 if current:
                     fail_job(db, current, exc)
                 db.commit()
-            log.exception("worker job failed id=%s kind=%s", job.id, job.kind)
+            duration_ms = (asyncio.get_running_loop().time() - started) * 1000
+            record(job.kind, "failed", duration_ms)
+            log.exception("worker job failed id=%s kind=%s duration_ms=%.2f", job.id, job.kind, duration_ms)
         else:
             with SessionLocal() as db:
                 current = db.get(type(job), job.id)
