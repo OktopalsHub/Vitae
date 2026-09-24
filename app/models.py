@@ -256,6 +256,26 @@ class ApplyDraft(Base):
     )
 
 
+class LLMRequest(Base):
+    """Durable, privacy-safe metadata for an LLM call. Prompt/response bodies are never stored."""
+
+    __tablename__ = "llm_requests"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    provider: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    model: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    purpose: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    prompt_version: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    latency_ms: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    input_chars: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    output_chars: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    input_tokens: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    output_tokens: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    error_type: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+
 class ListingMatchScore(Base):
     """Persisted browse-rank score for a profile×listing (not a UserJob overlay)."""
 
