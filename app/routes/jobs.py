@@ -6,7 +6,7 @@ from pathlib import Path
 from urllib.parse import quote, urlencode
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse, Response
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
@@ -25,6 +25,8 @@ from app.services import (
     search_job_cards,
 )
 from app.generator import generate_resume_files, list_resume_files
+from app.storage import StorageError, get_storage
+from app.models import ResumeArtifact, ResumeGeneration
 from app.accounts import (
     apply_profile_from_user,
     can_open_listing,
@@ -551,15 +553,38 @@ def download_file(
     safe = Path(filename).name
     if Path(safe).suffix.lower() not in {".pdf", ".docx"}:
         raise HTTPException(404, "File not found")
+    media = "application/octet-stream"
+    if safe.endswith(".pdf"):
+        media = "application/pdf"
+    elif safe.endswith(".docx"):
+        media = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+
+    artifact = (
+        db.query(ResumeArtifact)
+        .join(ResumeGeneration, ResumeArtifact.generation_id == ResumeGeneration.id)
+        .filter(
+            ResumeGeneration.user_id == user.id,
+            ResumeGeneration.listing_id == card.id,
+            ResumeArtifact.filename == safe,
+        )
+        .order_by(ResumeArtifact.created_at.desc())
+        .first()
+    )
+    if artifact:
+        try:
+            payload = get_storage().read(artifact.storage_key)
+            return Response(
+                payload,
+                media_type=artifact.content_type or media,
+                headers={"Content-Disposition": 'attachment; filename="' + safe + '"'},
+            )
+        except StorageError:
+            pass
+
     try:
         path = assert_download_under_user(user.id, card.output_dir, safe)
     except PermissionError:
         raise HTTPException(404, "File not found") from None
     if not path.exists() or not path.is_file():
         raise HTTPException(404, "File not found")
-    media = "application/octet-stream"
-    if safe.endswith(".pdf"):
-        media = "application/pdf"
-    elif safe.endswith(".docx"):
-        media = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
     return FileResponse(path, media_type=media, filename=safe)
