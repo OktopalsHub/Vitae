@@ -533,6 +533,67 @@ class AutoApplyItem(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
 
+class WorkerJobStatus(str, Enum):
+    QUEUED = "queued"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    DEAD = "dead"
+
+
+class WorkerJob(Base):
+    """Durable background task with retry and lease state."""
+    __tablename__ = "worker_jobs"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    queue: Mapped[str] = mapped_column(String(64), nullable=False, default="default", index=True)
+    kind: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    payload_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    payload_hash: Mapped[str] = mapped_column(String(64), nullable=False, default="")
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default=WorkerJobStatus.QUEUED.value, index=True)
+    priority: Mapped[int] = mapped_column(Integer, nullable=False, default=0, index=True)
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    max_attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=5)
+    idempotency_key: Mapped[Optional[str]] = mapped_column(String(255), nullable=True, unique=True)
+    available_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    locked_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True, index=True)
+    last_heartbeat_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    lock_owner: Mapped[str] = mapped_column(String(255), default="")
+    last_error: Mapped[str] = mapped_column(Text, default="")
+    failed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+
+class BillingEvent(Base):
+    """Append-only provider event receipt used for idempotent webhook handling."""
+    __tablename__ = "billing_events"
+    __table_args__ = (UniqueConstraint("provider", "event_id", name="uq_billing_provider_event"),)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    provider: Mapped[str] = mapped_column(String(64), nullable=False, default="bachs", index=True)
+    event_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    event_type: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    payload_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    payload_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="received", index=True)
+    processed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    error: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+
+
+class BillingSubscriptionEvent(Base):
+    """Append-only subscription state transitions for audit and reconciliation."""
+    __tablename__ = "billing_subscription_events"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    profile_id: Mapped[int] = mapped_column(Integer, ForeignKey("profiles.id", ondelete="cascade"), nullable=False, index=True)
+    provider: Mapped[str] = mapped_column(String(64), nullable=False, default="bachs")
+    subscription_id: Mapped[str] = mapped_column(String(255), default="", index=True)
+    from_status: Mapped[str] = mapped_column(String(64), default="")
+    to_status: Mapped[str] = mapped_column(String(64), default="")
+    plan: Mapped[str] = mapped_column(String(32), default="")
+    billing_event_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("billing_events.id", ondelete="set null"), nullable=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+
+
 class ApplicationStatus(str, Enum):
     DRAFT = "draft"
     READY = "ready"
