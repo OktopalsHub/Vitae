@@ -10,6 +10,7 @@ from __future__ import annotations
 import threading
 import time
 from functools import lru_cache
+from typing import Callable
 
 from fastapi import Request
 
@@ -98,8 +99,6 @@ def check_rate_limit(
         except RateLimitExceeded:
             raise
         except Exception:
-            # Keep the app available if Redis is temporarily unavailable.
-            # Operators can set RATE_LIMIT_BACKEND=local to make this explicit.
             pass
 
     _check_local(key, limit=limit, window_seconds=window_seconds, path=path)
@@ -109,10 +108,7 @@ def _client_key(request: Request, bucket: str) -> str:
     user_id = getattr(getattr(request, "state", None), "user_id", None)
     if user_id:
         return f"{bucket}:user:{user_id}"
-    forwarded = request.headers.get("x-forwarded-for", "")
-    client_ip = forwarded.split(",", 1)[0].strip() if forwarded else (
-        request.client.host if request.client else "unknown"
-    )
+    client_ip = request.client.host if request.client else "unknown"
     return f"{bucket}:ip:{client_ip}"
 
 
@@ -138,8 +134,13 @@ def enforce(
         key = _client_key(request, bucket)
     else:
         key = f"{bucket}:anonymous"
-    check_rate_limit(
-        key,
-        limit=limit_for(bucket),
-        path=redirect_path,
-    )
+    check_rate_limit(key, limit=limit_for(bucket), path=redirect_path)
+
+
+def rate_limit(bucket: str, *, redirect_path: str = "/") -> Callable:
+    """Return a FastAPI dependency that applies the named rate-limit bucket."""
+
+    async def dependency(request: Request) -> None:
+        enforce(bucket, request=request, redirect_path=redirect_path)
+
+    return dependency
