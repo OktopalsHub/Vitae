@@ -1,37 +1,65 @@
 {% extends "base.html" %}
 {% block title %}Auto-Apply Batch · Vitae{% endblock %}
 {% block content %}
-<div class="page-head">
-  <div><p class="eyebrow">Batch #{{ run.id }}</p><h1>Auto-Apply run</h1><p class="meta">{{ run.status }} · {{ run.prepared_count }} prepared · {{ run.submitted_count }} submitted · {{ run.failed_count }} failed</p></div>
+<div class="page-head page-head--wide">
+  <div>
+    <p class="eyebrow">Batch #{{ run.id }}</p>
+    <h1>Review your preparation batch</h1>
+    <p class="lede">{{ run.status|title }} · {{ run.prepared_count }} prepared · {{ run.submitted_count }} submitted · {{ run.failed_count }} failed</p>
+  </div>
   <div class="actions">
-    {% if run.status in ['queued','paused'] %}<form action="/auto-apply/runs/{{ run.id }}/start" method="post"><button class="btn btn-primary">Start</button></form>{% endif %}
+    {% if run.status in ['queued','paused'] %}<form action="/auto-apply/runs/{{ run.id }}/start" method="post"><button class="btn btn-primary">Start preparation</button></form>{% endif %}
     {% if run.status == 'running' %}<form action="/auto-apply/runs/{{ run.id }}/pause" method="post"><button class="btn">Pause</button></form>{% endif %}
-    {% if run.status not in ['completed','failed','cancelled'] %}<form action="/auto-apply/runs/{{ run.id }}/cancel" method="post"><button class="btn">Cancel</button></form>{% endif %}
+    {% if run.status not in ['completed','failed','cancelled'] %}<form action="/auto-apply/runs/{{ run.id }}/cancel" method="post"><button class="btn btn-danger">Cancel</button></form>{% endif %}
   </div>
 </div>
-<div class="panel">
-  <p class="meta">Review is {% if run.requires_review %}required{% else %}not required{% endif %}. External employer submission remains a separate, explicit action.</p>
-  {% for item in items %}
-  {% set job = listing_map.get(item.listing_id) %}
-  <article class="application-row">
-    <div>
-      <strong>{{ job.title if job else 'Job unavailable' }}</strong>
-      <div class="meta">{{ job.company if job else '' }} · {{ item.status }}{% if item.requires_review %} · review required{% endif %}</div>
-      {% if item.review_reason %}<p>{{ item.review_reason }}</p>{% endif %}
-      {% if item.last_error %}<p class="meta">{{ item.last_error }}</p>{% endif %}
-    </div>
-    <div class="actions">
-      {% if item.status == 'needs_review' %}
-      <form action="/auto-apply/items/{{ item.id }}/approve" method="post"><button class="btn btn-ok">Approve</button></form>
-      {% endif %}
-      {% if item.status in ['ready','needs_review'] %}
-      <form action="/auto-apply/items/{{ item.id }}/review" method="post"><input name="reason" placeholder="Review reason" /><button class="btn">Request review</button></form>
-      {% endif %}
-      {% if item.status == 'ready' %}
-      <form action="/auto-apply/items/{{ item.id }}/submit" method="post"><input name="external_application_id" placeholder="Employer ID" /><input name="external_url" placeholder="Employer URL" /><button class="btn btn-ok">Mark submitted</button></form>
-      {% endif %}
-    </div>
-  </article>
-  {% else %}<p class="meta">No jobs in this batch.</p>{% endfor %}
+
+<div class="stats">
+  <div class="stat"><div class="n">{{ run.prepared_count }}</div><div class="l">Prepared</div></div>
+  <div class="stat"><div class="n">{{ run.submitted_count }}</div><div class="l">Submitted</div></div>
+  <div class="stat"><div class="n">{{ run.failed_count }}</div><div class="l">Failed</div></div>
 </div>
+
+<section class="panel">
+  <div class="section-heading">
+    <div><p class="kicker">Review queue</p><h2 class="section-title">Applications in this batch</h2></div>
+    <span class="badge {% if run.requires_review %}ok{% endif %}">{% if run.requires_review %}Review required{% else %}Review optional{% endif %}</span>
+  </div>
+  <p class="meta">Vitae never submits to an employer automatically. Review, approve, then mark an item submitted after you complete the employer form.</p>
+
+  <div class="application-board">
+  {% for item in items %}
+    {% set job = listing_map.get(item.listing_id) %}
+    <article class="application-card">
+      <div class="application-card__main">
+        <div class="application-card__icon" aria-hidden="true">{{ (job.company if job and job.company else (job.title if job else "J"))[:1]|upper }}</div>
+        <div>
+          <p class="kicker">{{ job.company if job and job.company else "Job" }}</p>
+          <h2>{{ job.title if job else 'Job unavailable' }}</h2>
+          <p class="meta">{{ item.status|replace('_',' ')|title }}{% if item.requires_review %} · review required{% endif %}</p>
+          {% if item.review_reason %}<p>{{ item.review_reason }}</p>{% endif %}
+          {% if item.last_error %}<p class="meta">{{ item.last_error }}</p>{% endif %}
+        </div>
+      </div>
+      <div class="application-card__side">
+        {% if item.status == 'needs_review' %}
+        <form action="/auto-apply/items/{{ item.id }}/approve" method="post"><button class="btn btn-ok">Approve</button></form>
+        {% endif %}
+        {% if item.status in ['ready','needs_review'] %}
+        <form action="/auto-apply/items/{{ item.id }}/review" method="post"><input name="reason" placeholder="Review reason" aria-label="Review reason" /><button class="btn">Request review</button></form>
+        {% endif %}
+        {% if item.status == 'ready' %}
+        <form action="/auto-apply/items/{{ item.id }}/submit" method="post" class="form-inline">
+          <input name="external_application_id" placeholder="Employer ID" aria-label="Employer application ID" />
+          <input name="external_url" type="url" placeholder="Employer URL" aria-label="Employer application URL" />
+          <button class="btn btn-ok" type="submit">Mark submitted</button>
+        </form>
+        {% endif %}
+      </div>
+    </article>
+  {% else %}
+    <div class="empty-state empty-state--compact"><h3>No jobs in this batch</h3><p class="meta">The preparation queue is empty.</p></div>
+  {% endfor %}
+  </div>
+</section>
 {% endblock %}

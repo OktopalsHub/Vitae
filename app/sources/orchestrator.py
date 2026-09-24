@@ -68,6 +68,17 @@ async def _source_jobs(cfg: dict[str, Any], settings: Any):
     yield "jooble", lambda: fetch_jooble(
         getattr(settings, "jooble_api_key", "") or "", queries, max_per, excludes
     )
+    if _source_enabled(cfg, "firecrawl", False):
+        firecrawl_cfg = cfg.get("firecrawl") or {}
+        firecrawl_queries = list(firecrawl_cfg.get("queries") or queries)
+        firecrawl_domains = list(firecrawl_cfg.get("include_domains") or [])
+        yield "firecrawl", lambda: fetch_firecrawl(
+            getattr(settings, "firecrawl_api_key", "") or "",
+            firecrawl_queries,
+            max_per,
+            excludes,
+            firecrawl_domains,
+        )
     for board in cfg.get("greenhouse_boards") or []:
         yield f"greenhouse:{board}", lambda board=board: fetch_greenhouse(board, max_per, excludes)
     for site in cfg.get("lever_boards") or []:
