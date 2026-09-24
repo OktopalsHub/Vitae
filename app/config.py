@@ -18,6 +18,9 @@ class Settings(BaseSettings):
     jooble_api_key: str = ""
     # Optional open-web discovery via Firecrawl. Disabled unless explicitly enabled in config.yaml.
     firecrawl_api_key: str = ""
+    # Optional shared Redis backend for rate limiting across web replicas.
+    redis_url: str = ""
+    rate_limit_backend: str = "local"
     openai_api_key: str = ""
     openai_model: str = "gpt-4o-mini"
     gemini_api_key: str = ""
