@@ -43,3 +43,11 @@ def test_enforce_sets_redirect_path():
     with pytest.raises(RateLimitExceeded) as ei:
         enforce("auth", user_id="u2", redirect_path="/login")
     assert ei.value.path == "/login"
+
+
+def test_check_rate_limit_preserves_redirect_path():
+    for _ in range(2):
+        check_rate_limit("path", limit=2, path="/retry")
+    with pytest.raises(RateLimitExceeded) as ei:
+        check_rate_limit("path", limit=2, path="/retry")
+    assert ei.value.path == "/retry"
