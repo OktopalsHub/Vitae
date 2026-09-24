@@ -100,6 +100,17 @@ adzuna:
   country: "gb"
   results_per_page: 50
 
+# Optional open-web discovery. Set FIRECRAWL_API_KEY in the environment first.
+# Firecrawl complements structured APIs and ATS sources; it is not required for normal syncs.
+firecrawl:
+  queries:
+    - "software engineer remote"
+    - "backend engineer remote"
+    - "full stack engineer remote"
+    - "product manager remote"
+    - "designer remote"
+  include_domains: []
+
 sources:
   ashby: true
   bruntwork: true
@@ -107,6 +118,7 @@ sources:
   wellfound: true
   ziprecruiter: false
   djinni: true
+  firecrawl: false
 
 djinni_urls:
   - "https://djinni.co/jobs/rss/"
