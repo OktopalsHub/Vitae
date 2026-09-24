@@ -12,9 +12,10 @@ from sqlalchemy.orm import Session
 
 from app.config import project_path
 from app.db import get_db
-from app.models import JobListing, ListingVisibility, ProfileBilling, User, UserJob, UserRole
+from app.models import JobListing, ListingVisibility, ProfileBilling, User, UserJob, UserRole, WorkerJob, WorkerJobStatus
 from app.roles import ALLOWED_ROLES, apply_role, can_assign_role, user_role
 from app.web_helpers import flash_redirect, require_admin_user, require_super_admin_user, template_ctx
+from datetime import datetime, timedelta
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 templates = Jinja2Templates(directory=str(project_path("app", "templates")))
@@ -131,3 +132,64 @@ def set_user_role(
     db.add(target)
     db.commit()
     return flash_redirect("/admin/users", f"Updated {target.email} → {user_role(target)}")
+
+
+@router.get("/operations/workers")
+def worker_operations(
+    db: Session = Depends(get_db),
+    user: User = Depends(require_admin_user),
+):
+    """Return queue health counters for operators."""
+    counts = {
+        status: int(
+            db.query(func.count(WorkerJob.id))
+            .filter(WorkerJob.status == status)
+            .scalar()
+            or 0
+        )
+        for status in (
+            WorkerJobStatus.QUEUED.value,
+            WorkerJobStatus.RUNNING.value,
+            WorkerJobStatus.COMPLETED.value,
+            WorkerJobStatus.DEAD.value,
+        )
+    }
+    stale_before = datetime.utcnow() - timedelta(minutes=10)
+    stale_running = (
+        db.query(func.count(WorkerJob.id))
+        .filter(
+            WorkerJob.status == WorkerJobStatus.RUNNING.value,
+            func.coalesce(WorkerJob.last_heartbeat_at, WorkerJob.locked_at) < stale_before,
+        )
+        .scalar()
+        or 0
+    )
+    return {
+        "counts": counts,
+        "stale_running": int(stale_running),
+        "checked_at": datetime.utcnow().isoformat() + "Z",
+    }
+
+
+@router.post("/operations/workers/{job_id}/retry")
+def retry_dead_worker_job(
+    job_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_admin_user),
+):
+    """Requeue a dead job without changing its original payload."""
+    job = db.get(WorkerJob, job_id)
+    if job is None:
+        return flash_redirect("/admin", "Worker job not found.")
+    if job.status != WorkerJobStatus.DEAD.value:
+        return flash_redirect("/admin", "Only dead worker jobs can be retried.")
+    if job.attempts >= job.max_attempts:
+        job.attempts = 0
+    job.status = WorkerJobStatus.QUEUED.value
+    job.available_at = datetime.utcnow()
+    job.locked_at = None
+    job.last_heartbeat_at = None
+    job.lock_owner = ""
+    job.failed_at = None
+    db.commit()
+    return flash_redirect("/admin", f"Worker job {job.id} requeued.")
