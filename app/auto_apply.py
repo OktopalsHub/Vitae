@@ -197,6 +197,22 @@ def mark_item_review(
     return item
 
 
+def approve_item(db: Session, user: User, item_id: int) -> AutoApplyItem:
+    item = db.get(AutoApplyItem, item_id)
+    if item is None:
+        raise PermissionError("Auto-apply item not found")
+    run = _owned_run(db, user, item.run_id)
+    if run.status != AutoApplyRunStatus.RUNNING.value:
+        raise ValueError("Run is not active")
+    if item.status != AutoApplyItemStatus.NEEDS_REVIEW.value:
+        raise ValueError("Item does not require approval")
+    item.status = AutoApplyItemStatus.READY.value
+    item.requires_review = False
+    item.review_reason = ""
+    item.updated_at = datetime.utcnow()
+    db.flush()
+    return item
+
 def mark_item_submitted(
     db: Session,
     user: User,
