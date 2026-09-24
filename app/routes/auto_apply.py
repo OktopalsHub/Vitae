@@ -59,7 +59,10 @@ def create(
             idempotency_key=idempotency_key,
         )
         db.commit()
-    except (ValueError, PermissionError) as exc:
+    except PermissionError as exc:
+        db.rollback()
+        raise HTTPException(404, str(exc)) from exc
+    except ValueError as exc:
         db.rollback()
         raise HTTPException(409, str(exc)) from exc
     return flash_redirect(f"/auto-apply/runs/{run.id}", "Auto-apply batch created")
