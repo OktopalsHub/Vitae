@@ -19,6 +19,7 @@ from typing import Any
 from slugify import slugify
 
 from app.config import project_path
+from app.storage import get_storage
 from app.llm import LLMCreds, has_llm, llm_complete
 from app.ai.contracts import TailoredResume
 from app.ai.safety import sanitize_untrusted_text
@@ -216,6 +217,8 @@ async def generate_resume_files(
     contact = profile.get("contact") or ""
     data, used_fallback = await build_tailored_content(job, profile=profile, creds=creds)
     out = output_dir_for(job, user_id=user_id, profile_id=profile_id)
+    storage = get_storage()
+    generation_key = f"users/{user_id}/profiles/{profile_id or 0}/resumes/{job.id}/{out.name}"
 
     base = resume_basename(job, display_name=name)
     docx_path = out / f"{base}.docx"
@@ -256,7 +259,11 @@ async def generate_resume_files(
                 ResumeArtifact(
                     generation_id=generation.id,
                     format=fmt,
-                    storage_key=str(path),
+                    storage_key=storage.put(
+                        f"{generation_key}/{path.name}",
+                        payload,
+                        content_type=content_type,
+                    ),
                     filename=path.name,
                     content_type=content_type,
                     size_bytes=len(payload),

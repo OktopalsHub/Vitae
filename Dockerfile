@@ -10,8 +10,9 @@ RUN pip install --no-cache-dir uv
 
 WORKDIR /app
 
-COPY pyproject.toml uv.lock ./
-RUN uv sync --frozen --no-dev
+COPY pyproject.toml uv.lock requirements-s3.txt ./
+RUN uv sync --frozen --no-dev \
+    && uv pip install --python /app/.venv/bin/python -r requirements-s3.txt
 
 COPY alembic.ini config.yaml ./
 COPY alembic ./alembic
