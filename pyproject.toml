@@ -37,6 +37,9 @@ dependencies = [
   "pypdf>=5.0.0",
 ]
 
+[project.scripts]
+vitae-worker = "app.workers.runner:main"
+
 [dependency-groups]
 test = [
   "pytest>=8.0.0",

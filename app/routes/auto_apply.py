@@ -12,6 +12,7 @@ from app.auto_apply import (
     list_items,
     list_runs,
     mark_item_review,
+    approve_item,
     mark_item_submitted,
     pause_run,
     start_run,
@@ -142,6 +143,24 @@ def review(
         db.rollback()
         raise HTTPException(409, str(exc)) from exc
     return flash_redirect(f"/auto-apply/runs/{item.run_id}", "Item marked for review")
+
+
+@router.post("/items/{item_id}/approve")
+def approve(
+    item_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_profile_ready),
+):
+    try:
+        item = approve_item(db, user, item_id)
+        db.commit()
+    except PermissionError:
+        db.rollback()
+        raise HTTPException(404, "Auto-apply item not found") from None
+    except ValueError as exc:
+        db.rollback()
+        raise HTTPException(409, str(exc)) from exc
+    return flash_redirect(f"/auto-apply/runs/{item.run_id}", "Application approved for submission")
 
 
 @router.post("/items/{item_id}/submit")

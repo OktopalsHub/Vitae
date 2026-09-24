@@ -7,7 +7,7 @@ import secrets
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import or_
+from sqlalchemy import func, or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, load_only, noload
 
@@ -127,7 +127,7 @@ def job_card_from(
             output_dir=overlay.output_dir,
             user_job=overlay,
         )
-    score, reasons = score_listing_cached(listing, profile, cfg)
+    score, reasons, breakdown = score_listing_cached(listing, profile, cfg)
     return JobCard(
         listing=listing,
         match_score=score,
@@ -491,6 +491,105 @@ def list_job_cards(
     return cards
 
 
+def search_job_cards(
+    db: Session,
+    user: User,
+    *,
+    min_score: float = 0,
+    q: str = "",
+    status: str = "",
+    source: str = "",
+    location: str = "",
+    remote_type: str = "",
+    employment_type: str = "",
+    experience_level: str = "",
+    page: int = 1,
+    page_size: int = 20,
+) -> tuple[list[JobCard], int, bool]:
+    """Database-first job search using the persisted match-score cache.
+
+    Returns (cards, total, cache_ready). A cold profile is not rescored inside
+    the request. The durable matching worker is responsible for warming it.
+    """
+    ensure_account(db, user)
+    active = get_active_profile(db, user)
+    profile = load_user_profile_dict(db, user)
+    cfg = load_user_settings(db, user)
+    fingerprint = score_fingerprint(profile, cfg)
+    ready = db.query(ListingMatchScore.listing_id).filter(
+        ListingMatchScore.profile_id == active.id,
+        ListingMatchScore.fingerprint == fingerprint,
+    ).limit(1).first() is not None
+    if not ready:
+        return [], 0, False
+
+    page = max(1, int(page))
+    page_size = max(1, min(int(page_size), 100))
+    query = (
+        db.query(JobListing, ListingMatchScore, UserJob)
+        .join(
+            ListingMatchScore,
+            (ListingMatchScore.listing_id == JobListing.id)
+            & (ListingMatchScore.profile_id == active.id)
+            & (ListingMatchScore.fingerprint == fingerprint),
+        )
+        .outerjoin(
+            UserJob,
+            (UserJob.listing_id == JobListing.id) & (UserJob.profile_id == active.id),
+        )
+        .filter(
+            JobListing.is_active.is_(True),
+            or_(
+                JobListing.visibility == ListingVisibility.PUBLIC.value,
+                (JobListing.visibility == ListingVisibility.PRIVATE.value)
+                & (JobListing.owner_user_id == user.id),
+            ),
+            ListingMatchScore.match_score >= float(min_score),
+        )
+    )
+    if q.strip():
+        term = f"%{q.strip().lower()}%"
+        query = query.filter(
+            func.lower(JobListing.title).like(term)
+            | func.lower(JobListing.company).like(term)
+            | func.lower(JobListing.location).like(term)
+            | func.lower(JobListing.description).like(term)
+        )
+    if status.strip():
+        query = query.filter(UserJob.status == status.strip().lower())
+    if source.strip():
+        query = query.filter(JobListing.source == source.strip())
+    if location.strip():
+        query = query.filter(JobListing.normalized_location.like(f"%{location.strip()}%"))
+    if remote_type.strip():
+        query = query.filter(JobListing.remote_type == remote_type.strip())
+    if employment_type.strip():
+        query = query.filter(JobListing.employment_type == employment_type.strip())
+    if experience_level.strip():
+        query = query.filter(JobListing.experience_level == experience_level.strip())
+
+    total = query.with_entities(func.count(JobListing.id)).scalar() or 0
+    rows = (
+        query.order_by(ListingMatchScore.match_score.desc(), JobListing.posted_at.desc(), JobListing.title.asc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+        .all()
+    )
+    cards: list[JobCard] = []
+    for listing, score_row, overlay in rows:
+        status_val = (overlay.status if overlay else JobStatus.NEW.value) or JobStatus.NEW.value
+        cards.append(
+            JobCard(
+                listing=listing,
+                match_score=float(score_row.match_score or 0),
+                match_reasons=score_row.match_reasons or "",
+                status=status_val,
+                output_dir=overlay.output_dir if overlay else None,
+                user_job=overlay,
+            )
+        )
+    return cards, int(total), True
+
 def refresh_profile_match_scores(db: Session, user: User) -> int:
     """Recompute ListingMatchScore for all visible listings on the active profile."""
     ensure_account(db, user)
@@ -805,6 +904,8 @@ async def add_pasted_job_for_user(
         listing_id=listing.id,
         match_score=score,
         match_reasons=reasons,
+        breakdown_json=breakdown,
+        algorithm_version=MATCHING_ALGORITHM_VERSION,
         fingerprint=score_fingerprint(profile, cfg),
     )
     db.commit()

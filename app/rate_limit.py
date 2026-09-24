@@ -19,17 +19,6 @@ _LIMIT_PASTE = 20
 _LIMIT_AI = 15
 _LIMIT_DEFAULT = 60
 
-_RATE_LIMIT_LUA = """
-local current = redis.call("INCR", KEYS[1])
-if current == 1 then redis.call("EXPIRE", KEYS[1], ARGV[1]) end
-return current
-"""
-
-
-def _redis():
-    return None
-
-
 
 class RateLimitExceeded(Exception):
     def __init__(self, message: str = "Too many requests. Try again shortly.", *, path: str = "/"):
@@ -72,22 +61,3 @@ def check_rate_limit(key: str, *, limit: int, window_seconds: int = 60) -> None:
         if count > limit:
             raise RateLimitExceeded()
 
-
-
-def limit_for(scope: str) -> int:
-    return {"auth": _LIMIT_AUTH, "paste": _LIMIT_PASTE, "ai": _LIMIT_AI}.get(scope, _LIMIT_DEFAULT)
-
-
-def enforce(scope: str, *, request: Request | None = None, user_id: Any = None, redirect_path: str = "/", window_seconds: int = 60) -> None:
-    key = f"{scope}:user:{user_id}" if user_id is not None else f"{scope}:ip:{request.client.host if request and request.client else 'unknown'}"
-    try:
-        check_rate_limit(key, limit=limit_for(scope), window_seconds=window_seconds)
-    except RateLimitExceeded as exc:
-        exc.path = redirect_path
-        raise
-
-
-def rate_limit(scope: str, *, window_seconds: int = 60, redirect_path: str = "/") -> Callable[..., Any]:
-    async def _dependency(request: Request) -> None:
-        enforce(scope, request=request, redirect_path=redirect_path, window_seconds=window_seconds)
-    return _dependency
