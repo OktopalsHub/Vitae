@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import asyncio
 import os
+import secrets
 from contextlib import asynccontextmanager
 from urllib.parse import quote
 
 from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.responses import JSONResponse, PlainTextResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -31,6 +32,7 @@ from app.scheduler import start_catalogue_sync_task
 from app.observability import configure_logging
 from app.web_helpers import LoginRequired, OnboardingRequired, ForbiddenFlash, safe_http_url
 from app.observability_middleware import ObservabilityMiddleware
+from app.worker_metrics import prometheus_snapshot
 
 
 class CachedStaticFiles(StaticFiles):
@@ -236,6 +238,17 @@ async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
 
     return flash_redirect(exc.path, exc.message)
 
+
+@app.get("/metrics")
+def metrics(request: Request):
+    """Expose process metrics only when an operator token is configured."""
+    token = (get_settings().metrics_token or "").strip()
+    if not token:
+        return PlainTextResponse("metrics disabled\n", status_code=404)
+    supplied = (request.headers.get("Authorization") or "").strip()
+    if not secrets.compare_digest(supplied, f"Bearer {token}"):
+        return PlainTextResponse("unauthorized\n", status_code=401)
+    return PlainTextResponse(prometheus_snapshot(), media_type="text/plain; version=0.0.4")
 
 @app.get("/health")
 def health():

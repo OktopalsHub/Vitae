@@ -57,7 +57,8 @@ def test_application_transition_records_submission(db_session, confirmed_user):
     assert row.status == ApplicationStatus.SUBMITTED.value
     assert row.applied_at is not None
     assert row.external_application_id == "ACME-123"
-    events = db_session.query(ApplicationEvent).filter(ApplicationEvent.application_id == row.id).all()\n    assert [event.to_status for event in events] == ["draft", "submitted"]
+    events = db_session.query(ApplicationEvent).filter(ApplicationEvent.application_id == row.id).all()
+    assert [event.to_status for event in events] == ["draft", "submitted"]
 
 
 def test_terminal_application_cannot_move_back(db_session, confirmed_user):
