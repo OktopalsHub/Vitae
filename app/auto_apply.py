@@ -218,6 +218,13 @@ def mark_item_submitted(
         raise ValueError("Run is no longer active")
     if item.application_id is None:
         raise ValueError("Application is missing")
+    if item.status not in {
+        AutoApplyItemStatus.READY.value,
+        AutoApplyItemStatus.NEEDS_REVIEW.value,
+    }:
+        raise ValueError("Item is not prepared for submission")
+    if item.requires_review and item.status != AutoApplyItemStatus.READY.value:
+        raise ValueError("Review the prepared application before submitting")
     from app.applications import transition_application
 
     application = transition_application(
