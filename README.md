@@ -41,7 +41,7 @@ Production runs the application as separate services from one immutable image:
 - **Database:** PostgreSQL is recommended for production.
 - **Job discovery:** structured APIs, ATS boards, RSS sources, and optional Firecrawl open-web discovery.
 - **Migrations:** run explicitly with `alembic upgrade head` before deploying application services.
-- **Rate limiting:** the application limiter is single-process. Use an API gateway or distributed limiter when running multiple web replicas.
+- **Rate limiting:** local mode works for one process; set `RATE_LIMIT_BACKEND=redis` with `REDIS_URL` to share limits across web replicas.
 
 See [Phase 16 production architecture](docs/phase-16-production-architecture.md) and [Phase 17 final cleanup](docs/phase-17-final-cleanup.md).
 

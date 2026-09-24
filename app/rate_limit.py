@@ -1,16 +1,19 @@
-"""Small fixed-window rate limiter for single-process deployments.
+"""Fixed-window rate limiting with optional Redis coordination.
 
-For horizontally scaled production deployments, use an edge/API gateway
-rate limit in front of Vitae. This module intentionally has no hidden Redis
-dependency.
+Local mode is useful for development and single-process deployments.
+Set RATE_LIMIT_BACKEND=redis and REDIS_URL in production when multiple web
+replicas must share the same limits.
 """
 
 from __future__ import annotations
 
 import threading
 import time
+from functools import lru_cache
 
 from fastapi import Request
+
+from app.config import get_settings
 
 _lock = threading.Lock()
 _buckets: dict[str, tuple[float, int]] = {}
@@ -20,6 +23,14 @@ _LIMIT_PASTE = 20
 _LIMIT_AI = 15
 _LIMIT_DEFAULT = 60
 
+_RATE_LIMIT_LUA = """
+local current = redis.call("INCR", KEYS[1])
+if current == 1 then
+  redis.call("EXPIRE", KEYS[1], ARGV[1])
+end
+return current
+"""
+
 
 class RateLimitExceeded(Exception):
     def __init__(self, message: str = "Too many requests. Try again shortly.", *, path: str = "/"):
@@ -28,14 +39,27 @@ class RateLimitExceeded(Exception):
         super().__init__(message)
 
 
+@lru_cache
+def _redis_client():
+    settings = get_settings()
+    if (settings.rate_limit_backend or "").strip().lower() != "redis":
+        return None
+    url = (settings.redis_url or "").strip()
+    if not url:
+        return None
+    try:
+        import redis
+        return redis.Redis.from_url(url, decode_responses=True, socket_connect_timeout=1, socket_timeout=1)
+    except Exception:
+        return None
+
+
 def reset_rate_limits() -> None:
     with _lock:
         _buckets.clear()
 
 
-def check_rate_limit(key: str, *, limit: int, window_seconds: int = 60) -> None:
-    if limit <= 0:
-        return
+def _check_local(key: str, *, limit: int, window_seconds: int, path: str) -> None:
     now = time.time()
     with _lock:
         start, count = _buckets.get(key, (now, 0))
@@ -44,7 +68,41 @@ def check_rate_limit(key: str, *, limit: int, window_seconds: int = 60) -> None:
         count += 1
         _buckets[key] = (start, count)
         if count > limit:
-            raise RateLimitExceeded()
+            raise RateLimitExceeded(path=path)
+
+
+def check_rate_limit(
+    key: str,
+    *,
+    limit: int,
+    window_seconds: int = 60,
+    path: str = "/",
+) -> None:
+    if limit <= 0:
+        return
+
+    client = _redis_client()
+    if client is not None:
+        try:
+            count = int(
+                client.eval(
+                    _RATE_LIMIT_LUA,
+                    1,
+                    "vitae:rl:" + key,
+                    window_seconds,
+                )
+            )
+            if count > limit:
+                raise RateLimitExceeded(path=path)
+            return
+        except RateLimitExceeded:
+            raise
+        except Exception:
+            # Keep the app available if Redis is temporarily unavailable.
+            # Operators can set RATE_LIMIT_BACKEND=local to make this explicit.
+            pass
+
+    _check_local(key, limit=limit, window_seconds=window_seconds, path=path)
 
 
 def _client_key(request: Request, bucket: str) -> str:
@@ -74,17 +132,14 @@ def enforce(
     user_id: str | None = None,
     redirect_path: str = "/",
 ) -> None:
-    limits = {
-        "auth": _LIMIT_AUTH,
-        "paste": _LIMIT_PASTE,
-        "ai": _LIMIT_AI,
-        "default": _LIMIT_DEFAULT,
-    }
     if user_id:
         key = f"{bucket}:user:{user_id}"
     elif request is not None:
         key = _client_key(request, bucket)
     else:
         key = f"{bucket}:anonymous"
-    check_rate_limit(key, limit=limits.get(bucket, _LIMIT_DEFAULT))
-
+    check_rate_limit(
+        key,
+        limit=limit_for(bucket),
+        path=redirect_path,
+    )
