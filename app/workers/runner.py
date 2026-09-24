@@ -10,6 +10,7 @@ import signal
 from app.db import SessionLocal
 from app.workers.queue import claim_next_job, complete_job, fail_job
 from app.workers.tasks import execute_job
+from app.worker_metrics import record
 
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 log = logging.getLogger("vitae.worker")
@@ -39,6 +40,7 @@ async def run_worker(queue: str = "default", poll_seconds: float = 2.0) -> None:
             await asyncio.sleep(poll_seconds)
             continue
 
+        started = asyncio.get_running_loop().time()
         try:
             payload = json.loads(job.payload_json or "{}")
             await execute_job(job.kind, payload)
@@ -55,7 +57,9 @@ async def run_worker(queue: str = "default", poll_seconds: float = 2.0) -> None:
                 if current:
                     complete_job(db, current)
                 db.commit()
-            log.info("worker job completed id=%s kind=%s", job.id, job.kind)
+            duration_ms = (asyncio.get_running_loop().time() - started) * 1000
+            record(job.kind, "completed", duration_ms)
+            log.info("worker job completed id=%s kind=%s duration_ms=%.2f", job.id, job.kind, duration_ms)
 
 
 def main() -> None:
