@@ -9,9 +9,11 @@ from app.observability import new_request_id, request_id_ctx
 
 log = logging.getLogger("vitae.http")
 
+
 class ObservabilityMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request, call_next):
-        request_id = request.headers.get("X-Request-ID") or new_request_id()
+        incoming_request_id = (request.headers.get("X-Request-ID") or "").strip()
+        request_id = incoming_request_id[:128] if incoming_request_id else new_request_id()
         request.state.request_id = request_id
         token = request_id_ctx.set(request_id)
         started = time.perf_counter()

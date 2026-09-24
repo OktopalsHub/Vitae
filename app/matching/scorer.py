@@ -1,3 +1,17 @@
+from __future__ import annotations
+
+import json
+import re
+from typing import Any
+
+from app.matching.filters import (
+    has_strong_title_signal,
+    has_target_stack_signal,
+    is_excluded_title,
+    is_foreign_stack_title,
+    skill_in_text,
+)
+
 MATCHING_ALGORITHM_VERSION = "v2"
 
 
@@ -18,20 +32,6 @@ def score_job_versioned(
         "foreign_stack": list(detail["foreign_stack"]),
         "connection_summary": detail["connection_summary"],
     }
-
-from __future__ import annotations
-
-import json
-import re
-from typing import Any
-
-from app.matching.filters import (
-    has_strong_title_signal,
-    has_target_stack_signal,
-    is_excluded_title,
-    is_foreign_stack_title,
-    skill_in_text,
-)
 
 
 def _norm(text: str) -> str:
