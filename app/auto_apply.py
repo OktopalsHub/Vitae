@@ -53,9 +53,11 @@ def create_run(
     missing = [item for item in unique_ids if item not in by_id]
     if missing:
         raise ValueError("One or more jobs were not found")
-    inactive = [item for item in listings if not item.is_active and item.visibility == "public"]
-    if inactive:
-        raise ValueError("One or more jobs are no longer active")
+    for listing in listings:
+        if listing.visibility == "private" and listing.owner_user_id != user.id:
+            raise ValueError("One or more jobs are not available")
+        if listing.visibility == "public" and not listing.is_active:
+            raise ValueError("One or more jobs are no longer active")
 
     run = AutoApplyRun(
         user_id=user.id,
