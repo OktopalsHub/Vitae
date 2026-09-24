@@ -8,7 +8,7 @@ import uuid
 from datetime import datetime, timedelta
 from typing import Any
 
-from sqlalchemy import or_
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from app.models import WorkerJob, WorkerJobStatus
@@ -64,7 +64,7 @@ def claim_next_job(db: Session, *, queue: str = "default", lease_seconds: int = 
             WorkerJob.queue == queue,
             or_(
                 (WorkerJob.status == WorkerJobStatus.QUEUED.value) & (WorkerJob.available_at <= now),
-                (WorkerJob.status == WorkerJobStatus.RUNNING.value) & (WorkerJob.locked_at < stale),
+                (WorkerJob.status == WorkerJobStatus.RUNNING.value) & (\n                    func.coalesce(WorkerJob.last_heartbeat_at, WorkerJob.locked_at) < stale\n                ),
             ),
         )
         .order_by(WorkerJob.priority.desc(), WorkerJob.created_at.asc())
