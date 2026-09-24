@@ -15,6 +15,7 @@ from app.models import (
     ResumeArtifact,
     ResumeGeneration,
     User,
+    UserJob,
 )
 
 
@@ -229,8 +230,19 @@ def transition_application(
         row.external_url = external_url.strip()
     if note:
         row.notes = note.strip()
-    if target == ApplicationStatus.SUBMITTED.value and row.applied_at is None:
-        row.applied_at = now
+    if target == ApplicationStatus.SUBMITTED.value:
+        if row.applied_at is None:
+            row.applied_at = now
+        if row.listing_id is not None:
+            overlay = (
+                db.query(UserJob)
+                .filter(UserJob.profile_id == row.profile_id, UserJob.listing_id == row.listing_id)
+                .one_or_none()
+            )
+            if overlay is not None:
+                overlay.status = "applied"
+                overlay.updated_at = now
+                db.add(overlay)
 
     db.add(
         ApplicationEvent(
