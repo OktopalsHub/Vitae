@@ -7,11 +7,10 @@ import uuid
 from typing import Any
 
 from app.db import SessionLocal
-from app.models import AutoApplyItem, AutoApplyItemStatus, AutoApplyRun, AutoApplyRunStatus, User
+from app.models import AutoApplyItem, AutoApplyItemStatus, AutoApplyRun, AutoApplyRunStatus, JobListing, ResumeArtifact, ResumeGeneration, User
 from app.services import rescore_user_jobs, sync_public_jobs
 from app.generator import generate_resume_files
 from app.accounts import get_active_profile, load_user_profile_dict, llm_creds_for_user
-from app.accounts.profile import apply_profile_from_user
 from app.auto_apply import mark_item_review
 
 log = logging.getLogger(__name__)
@@ -71,7 +70,7 @@ async def _prepare_auto_apply_item(item_id: int) -> None:
             run = db.get(AutoApplyRun, item.run_id)
             user = db.get(User, run.user_id) if run else None
             profile = get_active_profile(db, user) if user else None
-            job = db.get(__import__("app.models", fromlist=["JobListing"]).JobListing, item.listing_id)
+            job = db.get(JobListing, item.listing_id)
             if not item or not run or not user or not profile or not job:
                 raise ValueError("Auto-apply preparation context is missing")
             profile_dict = load_user_profile_dict(db, user)
@@ -88,7 +87,17 @@ async def _prepare_auto_apply_item(item_id: int) -> None:
             )
             from app.applications import get_or_create_application
             application = get_or_create_application(db, user, job.id, channel="auto_apply")
-            application.resume_artifact_id = None
+            generation = db.query(ResumeGeneration).filter(
+                ResumeGeneration.profile_id == profile.id,
+                ResumeGeneration.listing_id == job.id,
+            ).order_by(ResumeGeneration.created_at.desc()).first()
+            artifact = None
+            if generation:
+                artifact = db.query(ResumeArtifact).filter(
+                    ResumeArtifact.generation_id == generation.id,
+                    ResumeArtifact.format == "pdf",
+                ).one_or_none()
+            application.resume_artifact_id = artifact.id if artifact else None
             item.application_id = application.id
             item.status = (
                 AutoApplyItemStatus.NEEDS_REVIEW.value
