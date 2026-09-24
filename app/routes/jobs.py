@@ -453,6 +453,7 @@ async def generate_cv(
         user_id=str(user.id),
         profile_id=up.id if up else None,
         display_name=display,
+        db=db,
     )
     card.user_job.output_dir = str(out)
     card.user_job.status = JobStatus.CV_READY.value
