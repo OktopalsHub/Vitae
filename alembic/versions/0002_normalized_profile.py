@@ -2,6 +2,7 @@
 
 from alembic import op
 import sqlalchemy as sa
+from sqlalchemy import inspect as sa_inspect
 
 revision = "0002_normalized_profile"
 down_revision = "0001_baseline"
@@ -116,8 +117,33 @@ def upgrade() -> None:
     )
     op.create_index("ix_resume_versions_profile_id", "resume_versions", ["profile_id"])
 
+    # resume_generations (created by 0001) references resume_versions, which did
+    # not exist yet on dialects that validate FK targets at CREATE TABLE time.
+    # SQLite carries the FK inline from 0001, so only add it when missing.
+    bind = op.get_bind()
+    inspector = sa_inspect(bind)
+    if inspector.has_table("resume_generations"):
+        existing = inspector.get_foreign_keys("resume_generations")
+        if not any(fk.get("referred_table") == "resume_versions" for fk in existing):
+            op.create_foreign_key(
+                "fk_resume_generations_source_resume_version_id",
+                "resume_generations",
+                "resume_versions",
+                ["source_resume_version_id"],
+                ["id"],
+                ondelete="set null",
+            )
+
 
 def downgrade() -> None:
+    bind = op.get_bind()
+    inspector = sa_inspect(bind)
+    if inspector.has_table("resume_generations"):
+        for fk in inspector.get_foreign_keys("resume_generations"):
+            if fk.get("referred_table") == "resume_versions" and fk.get("name"):
+                op.drop_constraint(
+                    fk["name"], "resume_generations", type_="foreignkey"
+                )
     op.drop_table("resume_versions")
     op.drop_table("documents")
     op.drop_table("profile_preferences")

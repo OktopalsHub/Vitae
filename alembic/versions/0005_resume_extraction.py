@@ -1,7 +1,7 @@
 """Add structured extraction fields to resume versions.
 
 Revision ID: 0005
-Revises: 0004
+Revises: 0004_backfill_profile
 """
 
 from alembic import op
@@ -9,7 +9,7 @@ import sqlalchemy as sa
 
 
 revision = "0005"
-down_revision = "0004"
+down_revision = "0004_backfill_profile"
 branch_labels = None
 depends_on = None
 
