@@ -94,6 +94,23 @@ app = FastAPI(
     openapi_url=None if _prod_like else "/openapi.json",
 )
 app.add_middleware(ObservabilityMiddleware)
+
+
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    """Add baseline browser security headers without breaking the existing UI."""
+
+    async def dispatch(self, request: Request, call_next):
+        response = await call_next(request)
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        response.headers.setdefault("X-Frame-Options", "DENY")
+        response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+        response.headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+        if _prod_like:
+            response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+        return response
+
+
+app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(AuthApiRateLimitMiddleware)
 app.add_middleware(CSRFMiddleware)
 templates = Jinja2Templates(directory=str(project_path("app", "templates")))
