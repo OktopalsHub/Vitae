@@ -58,11 +58,33 @@ def _client_key(request: Request, bucket: str) -> str:
     return f"{bucket}:ip:{client_ip}"
 
 
-def enforce(bucket: str, *, request: Request, redirect_path: str = "/") -> None:
+def limit_for(bucket: str) -> int:
+    return {
+        "auth": _LIMIT_AUTH,
+        "paste": _LIMIT_PASTE,
+        "ai": _LIMIT_AI,
+        "default": _LIMIT_DEFAULT,
+    }.get(bucket, _LIMIT_DEFAULT)
+
+
+def enforce(
+    bucket: str,
+    *,
+    request: Request | None = None,
+    user_id: str | None = None,
+    redirect_path: str = "/",
+) -> None:
     limits = {
         "auth": _LIMIT_AUTH,
         "paste": _LIMIT_PASTE,
         "ai": _LIMIT_AI,
         "default": _LIMIT_DEFAULT,
     }
-    check_rate_limit(_client_key(request, bucket), limit=limits.get(bucket, _LIMIT_DEFAULT))
+    if user_id:
+        key = f"{bucket}:user:{user_id}"
+    elif request is not None:
+        key = _client_key(request, bucket)
+    else:
+        key = f"{bucket}:anonymous"
+    check_rate_limit(key, limit=limits.get(bucket, _LIMIT_DEFAULT))
+
