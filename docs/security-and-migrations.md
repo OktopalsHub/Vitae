@@ -202,3 +202,29 @@ Migration `0011_applications` creates `applications` and `application_events`.
 The application record stores a snapshot of the application copy. This is intentional: later edits to an Apply Assist draft must not change what was recorded as submitted.
 
 Actual employer submission remains user-controlled. Vitae records that the user marked the application as submitted; it does not claim that an external employer system accepted the submission.
+
+
+## Phase 10: Controlled auto-apply foundation
+
+Auto-apply is modeled as a durable, user-controlled workflow. A run contains one or more application items and has explicit lifecycle state.
+
+The first implementation deliberately separates **application preparation** from **external submission**:
+
+- A run creates or reuses the user's application records.
+- Each item tracks preparation, review, attempts, errors, and submission state.
+- Runs can be started, paused, and cancelled.
+- Items can be marked for review.
+- Marking an item submitted requires an explicit user action.
+- Employer URLs and external application IDs are recorded on the application.
+- Idempotency keys prevent duplicate batches.
+- Ownership is checked for every run and item operation.
+
+No employer website automation or credential storage is introduced in this phase. That belongs behind a dedicated submission adapter and worker boundary so employer-specific behavior cannot bypass application ownership, review, rate limits, or audit requirements.
+
+Migration `0012_auto_apply` creates `auto_apply_runs` and `auto_apply_items`.
+
+Run:
+
+```bash
+alembic upgrade head
+```
