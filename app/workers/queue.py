@@ -55,7 +55,12 @@ def enqueue_job(
     return job
 
 
-def claim_next_job(db: Session, *, queue: str = "default", lease_seconds: int = DEFAULT_LEASE_SECONDS) -> WorkerJob | None:
+def claim_next_job(
+    db: Session,
+    *,
+    queue: str = "default",
+    lease_seconds: int = DEFAULT_LEASE_SECONDS,
+) -> WorkerJob | None:
     now = datetime.utcnow()
     stale = now - timedelta(seconds=max(30, lease_seconds))
     job = (
@@ -63,8 +68,16 @@ def claim_next_job(db: Session, *, queue: str = "default", lease_seconds: int = 
         .filter(
             WorkerJob.queue == queue,
             or_(
-                (WorkerJob.status == WorkerJobStatus.QUEUED.value) & (WorkerJob.available_at <= now),
-                (WorkerJob.status == WorkerJobStatus.RUNNING.value) & (\n                    func.coalesce(WorkerJob.last_heartbeat_at, WorkerJob.locked_at) < stale\n                ),
+                (WorkerJob.status == WorkerJobStatus.QUEUED.value)
+                & (WorkerJob.available_at <= now),
+                (WorkerJob.status == WorkerJobStatus.RUNNING.value)
+                & (
+                    func.coalesce(
+                        WorkerJob.last_heartbeat_at,
+                        WorkerJob.locked_at,
+                    )
+                    < stale
+                ),
             ),
         )
         .order_by(WorkerJob.priority.desc(), WorkerJob.created_at.asc())
@@ -73,6 +86,7 @@ def claim_next_job(db: Session, *, queue: str = "default", lease_seconds: int = 
     )
     if job is None:
         return None
+
     job.status = WorkerJobStatus.RUNNING.value
     job.attempts += 1
     job.locked_at = now
@@ -86,19 +100,30 @@ def complete_job(db: Session, job: WorkerJob) -> None:
     job.status = WorkerJobStatus.COMPLETED.value
     job.completed_at = datetime.utcnow()
     job.locked_at = None
+    job.last_heartbeat_at = None
     job.lock_owner = ""
     job.last_error = ""
     db.flush()
 
 
-def fail_job(db: Session, job: WorkerJob, error: Exception | str, *, retry_delay_seconds: int = 60) -> None:
+def fail_job(
+    db: Session,
+    job: WorkerJob,
+    error: Exception | str,
+    *,
+    retry_delay_seconds: int = 60,
+) -> None:
     message = str(error)[:MAX_ERROR_CHARS]
     job.last_error = message
     job.locked_at = None
+    job.last_heartbeat_at = None
     job.lock_owner = ""
     if job.attempts < job.max_attempts:
         job.status = WorkerJobStatus.QUEUED.value
-        backoff = min(max(retry_delay_seconds, 5) * (2 ** max(0, job.attempts - 1)), 3600)
+        backoff = min(
+            max(retry_delay_seconds, 5) * (2 ** max(0, job.attempts - 1)),
+            3600,
+        )
         job.available_at = datetime.utcnow() + timedelta(seconds=backoff)
     else:
         job.status = WorkerJobStatus.DEAD.value
@@ -106,6 +131,16 @@ def fail_job(db: Session, job: WorkerJob, error: Exception | str, *, retry_delay
     db.flush()
 
 
-def heartbeat_job(db: Session, job: WorkerJob) -> None:
+def heartbeat_job(
+    db: Session,
+    job: WorkerJob,
+    *,
+    lock_owner: str | None = None,
+) -> bool:
+    if job.status != WorkerJobStatus.RUNNING.value:
+        return False
+    if lock_owner is not None and job.lock_owner != lock_owner:
+        return False
     job.last_heartbeat_at = datetime.utcnow()
     db.flush()
+    return True
