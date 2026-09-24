@@ -20,7 +20,7 @@ services:
       retries: 5
       start_period: 20s
 
-  worker:
+  worker-default:
     build:
       context: .
     restart: unless-stopped
@@ -28,6 +28,30 @@ services:
       - .env
     environment:
       WORKER_QUEUE: "default"
+      WORKER_POLL_SECONDS: "2"
+    command: ["./scripts/start-worker.sh"]
+    stop_grace_period: 60s
+
+  worker-catalogue:
+    build:
+      context: .
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      WORKER_QUEUE: "catalogue"
+      WORKER_POLL_SECONDS: "2"
+    command: ["./scripts/start-worker.sh"]
+    stop_grace_period: 60s
+
+  worker-matching:
+    build:
+      context: .
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      WORKER_QUEUE: "matching"
       WORKER_POLL_SECONDS: "2"
     command: ["./scripts/start-worker.sh"]
     stop_grace_period: 60s
