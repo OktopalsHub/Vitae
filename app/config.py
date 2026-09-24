@@ -22,6 +22,7 @@ class Settings(BaseSettings):
     redis_url: str = ""
     rate_limit_backend: str = "local"
     forwarded_allow_ips: str = "127.0.0.1"
+    metrics_token: str = ""
     openai_api_key: str = ""
     openai_model: str = "gpt-4o-mini"
     gemini_api_key: str = ""
