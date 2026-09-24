@@ -1,19 +1,20 @@
-"""In-process fixed-window rate limiting (no Redis)."""
+"""Small fixed-window rate limiter for single-process deployments.
+
+For horizontally scaled production deployments, use an edge/API gateway
+rate limit in front of Vitae. This module intentionally has no hidden Redis
+dependency.
+"""
 
 from __future__ import annotations
 
 import threading
 import time
-from collections.abc import Callable
-from typing import Any
 
 from fastapi import Request
 
 _lock = threading.Lock()
-# key -> (window_start_epoch, count)
 _buckets: dict[str, tuple[float, int]] = {}
 
-# Hardcoded buckets (requests per 60s). Not env-tunable.
 _LIMIT_AUTH = 10
 _LIMIT_PASTE = 20
 _LIMIT_AI = 15
@@ -28,29 +29,13 @@ class RateLimitExceeded(Exception):
 
 
 def reset_rate_limits() -> None:
-    """Clear all buckets (tests)."""
     with _lock:
         _buckets.clear()
 
 
 def check_rate_limit(key: str, *, limit: int, window_seconds: int = 60) -> None:
-    """Atomically enforce a fixed-window limit in Redis when configured."""
     if limit <= 0:
         return
-    client = _redis()
-    if client is not None:
-        try:
-            count = int(client.eval(_RATE_LIMIT_LUA, 1, "vitae:rl:" + key, window_seconds))
-            if count > limit:
-                raise RateLimitExceeded()
-            return
-        except RateLimitExceeded:
-            raise
-        except Exception:
-            # Redis is a control-plane dependency, but an outage must not take the
-            # application down. Fall back to the bounded local limiter for continuity.
-            pass
-
     now = time.time()
     with _lock:
         start, count = _buckets.get(key, (now, 0))
@@ -61,3 +46,23 @@ def check_rate_limit(key: str, *, limit: int, window_seconds: int = 60) -> None:
         if count > limit:
             raise RateLimitExceeded()
 
+
+def _client_key(request: Request, bucket: str) -> str:
+    user_id = getattr(getattr(request, "state", None), "user_id", None)
+    if user_id:
+        return f"{bucket}:user:{user_id}"
+    forwarded = request.headers.get("x-forwarded-for", "")
+    client_ip = forwarded.split(",", 1)[0].strip() if forwarded else (
+        request.client.host if request.client else "unknown"
+    )
+    return f"{bucket}:ip:{client_ip}"
+
+
+def enforce(bucket: str, *, request: Request, redirect_path: str = "/") -> None:
+    limits = {
+        "auth": _LIMIT_AUTH,
+        "paste": _LIMIT_PASTE,
+        "ai": _LIMIT_AI,
+        "default": _LIMIT_DEFAULT,
+    }
+    check_rate_limit(_client_key(request, bucket), limit=limits.get(bucket, _LIMIT_DEFAULT))
