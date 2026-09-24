@@ -24,11 +24,12 @@ class Settings(BaseSettings):
     rate_limit_backend: str = "local"
     forwarded_allow_ips: str = "127.0.0.1"
     metrics_token: str = ""
-    # Generated CV/object storage. Use s3 in production for durable artifacts.
+    # Generated CV/object storage. Cloudflare R2 is the production backend.
     object_storage_backend: str = "local"
-    object_storage_bucket: str = ""
-    object_storage_region: str = ""
-    object_storage_endpoint: str = ""
+    r2_account_id: str = ""
+    r2_access_key_id: str = ""
+    r2_secret_access_key: str = ""
+    r2_bucket_name: str = ""
     openai_api_key: str = ""
     openai_model: str = "gpt-4o-mini"
     gemini_api_key: str = ""
@@ -123,17 +124,21 @@ def assert_secure_settings() -> None:
             raise RuntimeError("RATE_LIMIT_BACKEND must be local or redis.")
 
         storage_backend = (s.object_storage_backend or "local").strip().lower()
-        if storage_backend == "s3":
-            if not (s.object_storage_bucket or "").strip():
-                raise RuntimeError("OBJECT_STORAGE_BUCKET is required when OBJECT_STORAGE_BACKEND=s3.")
-            endpoint = (s.object_storage_endpoint or "").strip()
-            if endpoint and not endpoint.startswith("https://"):
-                raise RuntimeError("OBJECT_STORAGE_ENDPOINT must use HTTPS in production.")
-            if endpoint and "r2.cloudflarestorage.com" in endpoint:
-                if not os.getenv("AWS_ACCESS_KEY_ID") or not os.getenv("AWS_SECRET_ACCESS_KEY"):
-                    raise RuntimeError("Cloudflare R2 requires AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY in production.")
+        if storage_backend == "r2":
+            missing = [
+                name for name, value in {
+                    "R2_ACCOUNT_ID": s.r2_account_id,
+                    "R2_ACCESS_KEY_ID": s.r2_access_key_id,
+                    "R2_SECRET_ACCESS_KEY": s.r2_secret_access_key,
+                    "R2_BUCKET_NAME": s.r2_bucket_name,
+                }.items() if not (value or "").strip()
+            ]
+            if missing:
+                raise RuntimeError(
+                    "Cloudflare R2 requires: " + ", ".join(missing)
+                )
         elif storage_backend != "local":
-            raise RuntimeError("OBJECT_STORAGE_BACKEND must be local or s3.")
+            raise RuntimeError("OBJECT_STORAGE_BACKEND must be local or r2.")
 
 
 
