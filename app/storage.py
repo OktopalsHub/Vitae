@@ -66,7 +66,9 @@ class S3ObjectStorage(ObjectStorage):
             import boto3
         except ImportError as exc:
             raise StorageError("boto3 is required for S3 object storage") from exc
-        kwargs = {}
+        kwargs = {"config": __import__("botocore").config.Config(signature_version="s3v4")}
+        # R2 and other S3-compatible endpoints require path-style addressing only when the provider needs it.
+        # boto3 defaults to virtual-hosted addressing, which R2 supports.
         endpoint = (settings.object_storage_endpoint or "").strip()
         if endpoint:
             kwargs["endpoint_url"] = endpoint
