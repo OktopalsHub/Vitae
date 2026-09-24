@@ -22,6 +22,7 @@ from app.services import (
     list_job_cards,
     rescore_user_jobs,
     sync_public_jobs,
+    search_job_cards,
 )
 from app.generator import generate_resume_files, list_resume_files
 from app.accounts import (
@@ -41,6 +42,7 @@ from app.accounts import (
     FREE_CLEAR_MATCHES,
 )
 from app.rate_limit import enforce
+from app.workers.queue import enqueue_job
 from app.web_helpers import (
     assert_download_under_user,
     ensure_user_apply_copy,
@@ -121,157 +123,95 @@ def jobs_board(
     status: str = Query(""),
     min_score: float | None = Query(None),
     q: str = Query(""),
+    location: str = Query(""),
+    remote_type: str = Query(""),
+    employment_type: str = Query(""),
+    experience_level: str = Query(""),
     page: int = Query(1, ge=1),
 ):
     cfg = load_user_settings(db, user)
-    threshold = (
-        min_score
-        if min_score is not None
-        else float((cfg.get("search") or {}).get("min_match_score") or 65)
-    )
+    threshold = min_score if min_score is not None else float((cfg.get("search") or {}).get("min_match_score") or 65)
     threshold = max(0.0, min(100.0, threshold))
     status_norm = (status or "").strip().lower()
-    q_norm = (q or "").strip()
-    allowed_statuses = {s.value for s in JobStatus}
-    if status_norm and status_norm not in allowed_statuses:
+    if status_norm and status_norm not in {s.value for s in JobStatus}:
         status_norm = ""
 
-    # Open catalogue only (closed listings excluded in list_job_cards).
-    baseline = list_job_cards(db, user, min_score=threshold)
-    status_counts = {
-        s.value: sum(1 for c in baseline if c.status == s.value) for s in JobStatus
-    }
-    filtered = baseline
-    if q_norm:
-        ql = q_norm.lower()
-        filtered = [
-            c
-            for c in filtered
-            if ql in f"{c.title} {c.company} {c.location}".lower()
-        ]
-    matched = (
-        [c for c in filtered if c.status == status_norm]
-        if status_norm
-        else filtered
+    cards, total, cache_ready = search_job_cards(
+        db,
+        user,
+        min_score=threshold,
+        q=q,
+        status=status_norm,
+        location=location,
+        remote_type=remote_type,
+        employment_type=employment_type,
+        experience_level=experience_level,
+        page=page,
+        page_size=JOBS_PAGE_SIZE,
     )
+    if not cache_ready:
+        active = get_active_profile(db, user)
+        job = enqueue_job(
+            db,
+            kind="user_rescore",
+            queue="matching",
+            payload={"user_id": str(user.id)},
+            idempotency_key=f"user-rescore:request:{user.id}:{active.id}",
+        )
+        db.commit()
 
-    total = len(matched)
     total_pages = max(1, ceil(total / JOBS_PAGE_SIZE) if total else 1)
     page_num = min(page, total_pages)
-    start = (page_num - 1) * JOBS_PAGE_SIZE
-    page_cards = matched[start : start + JOBS_PAGE_SIZE]
-    end = start + len(page_cards)
-
     full_access = has_full_job_access(db, user)
     unlocked_ids = set() if full_access else free_unlocked_listing_ids(db, user)
     free_remaining = 0 if full_access else free_opens_remaining(db, user)
-
-    # Batch-load all listings for the page to avoid N+1 queries.
-    listing_ids = [int(card.id) for card in page_cards]
-    listings = (
-        db.query(JobListing)
-        .filter(JobListing.id.in_(listing_ids))
-        .all()
-        if listing_ids
-        else []
-    )
-    listing_map = {l.id: l for l in listings}
+    free_used = 0 if full_access else len(unlocked_ids)
 
     job_rows = []
-    for card in page_cards:
+    for card in cards:
         lid = int(card.id)
-        listing = listing_map.get(lid)
         is_private_own = (
-            listing is not None
-            and listing.visibility == ListingVisibility.PRIVATE.value
-            and listing.owner_user_id == user.id
+            card.visibility == ListingVisibility.PRIVATE.value
+            and card.listing.owner_user_id == user.id
         )
         blurred = not (full_access or is_private_own or lid in unlocked_ids)
-        openable = full_access or lid in unlocked_ids or (
-            listing is not None
-            and listing.visibility == ListingVisibility.PUBLIC.value
+        openable = full_access or lid in unlocked_ids or is_private_own or (
+            card.visibility == ListingVisibility.PUBLIC.value
             and len(unlocked_ids) < FREE_CLEAR_MATCHES
         )
-        job_rows.append(
-            {
-                "card": card,
-                "blurred": blurred,
-                "openable": openable,
-                "unlocked": full_access or lid in unlocked_ids,
-            }
-        )
+        job_rows.append({"card": card, "blurred": blurred, "openable": openable, "unlocked": full_access or lid in unlocked_ids})
+
+    status_counts = {s.value: 0 for s in JobStatus}
+    if cards:
+        for card in cards:
+            status_counts[card.status] = status_counts.get(card.status, 0) + 1
 
     ai_ok, ai_reason = can_use_ai(db, user)
     suggest_min = max(0, int(threshold) - 10)
+    def qs(page_value: int | None = None, *, status_value: str = status_norm, threshold_value: float = threshold) -> str:
+        return _jobs_query_string(status=status_value, min_score=threshold_value, q=q, page=page_value)
+
     pager = {
-        "page": page_num,
-        "page_size": JOBS_PAGE_SIZE,
-        "total": total,
-        "total_pages": total_pages,
-        "start": start + 1 if total else 0,
-        "end": end,
-        "has_prev": page_num > 1,
-        "has_next": page_num < total_pages,
-        "prev_qs": _jobs_query_string(
-            status=status_norm, min_score=threshold, q=q_norm, page=page_num - 1
-        ),
-        "next_qs": _jobs_query_string(
-            status=status_norm, min_score=threshold, q=q_norm, page=page_num + 1
-        ),
-        "base_qs": _jobs_query_string(status=status_norm, min_score=threshold, q=q_norm),
-        "suggest_qs": _jobs_query_string(status="", min_score=suggest_min, q=q_norm),
+        "page": page_num, "page_size": JOBS_PAGE_SIZE, "total": total, "total_pages": total_pages,
+        "start": (page_num - 1) * JOBS_PAGE_SIZE + 1 if total else 0,
+        "end": (page_num - 1) * JOBS_PAGE_SIZE + len(cards),
+        "has_prev": page_num > 1, "has_next": page_num < total_pages,
+        "prev_qs": qs(page_num - 1), "next_qs": qs(page_num + 1), "base_qs": qs(),
+        "suggest_qs": qs(status_value="", threshold_value=suggest_min),
     }
-
-    # Compute locked_count from pre-loaded data — no extra queries needed.
-    if full_access:
-        locked_count = 0
-    else:
-        all_matched_ids = [int(c.id) for c in matched]
-        all_listings = (
-            db.query(JobListing)
-            .filter(JobListing.id.in_(all_matched_ids))
-            .all()
-            if all_matched_ids
-            else []
-        )
-        all_listing_map = {l.id: l for l in all_listings}
-        locked_count = sum(
-            1
-            for lid in all_matched_ids
-            if lid not in unlocked_ids
-            and not (
-                all_listing_map.get(lid) is not None
-                and all_listing_map[lid].visibility == ListingVisibility.PRIVATE.value
-                and all_listing_map[lid].owner_user_id == user.id
-            )
-        )
-    free_used = 0 if full_access else len(unlocked_ids)
-
-    db.commit()  # persist any newly filled ListingMatchScore rows
-
     return templates.TemplateResponse(
         request,
         "jobs.html",
         template_ctx(
-            request,
-            user,
-            db,
-            jobs=job_rows,
-            status_counts=status_counts,
-            status=status_norm,
-            min_score=threshold,
-            q=q_norm,
-            pager=pager,
-            ai_ok=ai_ok,
-            ai_reason=ai_reason,
-            suggest_min=suggest_min,
-            full_access=full_access,
-            free_clear=FREE_CLEAR_MATCHES,
-            free_remaining=free_remaining,
-            free_used=free_used,
-            locked_count=locked_count,
-            has_matches=bool(baseline),
-            profile_ready=True,
+            request, user, db,
+            jobs=job_rows, status_counts=status_counts, status=status_norm,
+            min_score=threshold, q=q, pager=pager, ai_ok=ai_ok, ai_reason=ai_reason,
+            suggest_min=suggest_min, full_access=full_access, free_clear=FREE_CLEAR_MATCHES,
+            free_remaining=free_remaining, free_used=free_used,
+            locked_count=0 if full_access else max(0, total - free_used),
+            has_matches=bool(total), profile_ready=True, cache_ready=cache_ready,
+            location=location, remote_type=remote_type,
+            employment_type=employment_type, experience_level=experience_level,
         ),
     )
 
