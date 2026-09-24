@@ -33,7 +33,7 @@ Make the product easier to understand and faster to use without changing the cor
 
 Firecrawl is useful when Vitae needs live web data, such as scraping dynamic job pages, crawling job-board sections, or interacting with pages that require browser rendering. Its current API supports search, scrape, crawl and browser interaction. See https://www.firecrawl.dev/ and https://www.firecrawl.dev/crawl.
 
-Phase 15 is a UI/UX phase, so there is no Firecrawl call in the application runtime here. Adding it only to redesign templates would add an unnecessary dependency. The appropriate integration point remains the job-source/data pipeline, where it can be introduced behind the existing source adapter interface when a source needs browser rendering or structured extraction.
+Phase 15 now also adds Firecrawl as an optional open-web job discovery source. It is enabled in the source configuration and isolated behind the existing source orchestration boundary. Set `FIRECRAWL_API_KEY` before running catalogue syncs. Firecrawl complements, rather than replaces, structured APIs and company ATS adapters. Its Search API can discover fresh web pages and return scraped page content, while Scrape/Crawl/Interact can be used later for source-specific extraction or dynamic workflows. citeturn0search1turn0search3turn0search6
 
 ## Acceptance criteria
 
@@ -44,4 +44,8 @@ Phase 15 is a UI/UX phase, so there is no Firecrawl call in the application runt
 - [x] Auto-apply detail exposes prepared/submitted/failed counts.
 - [x] Mobile layouts stack profile, application and automation controls.
 - [x] Existing routes/forms are preserved.
+- [x] Firecrawl open-web discovery adapter is registered in the source pipeline.
+- [x] Firecrawl is isolated as a source and does not replace existing providers.
+- [x] Firecrawl configuration and API-key status are supported.
+- [x] Firecrawl helper tests are included.
 - [ ] Full CI suite passes on GitHub Actions.
