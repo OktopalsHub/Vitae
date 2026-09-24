@@ -30,7 +30,7 @@
       <a class="wordmark" href="/">V<em>itae</em></a>
       <nav class="nav" id="siteNav" aria-label="Primary">
         {% if user %}
-          {% if profile_ready %}<a href="/jobs">Jobs</a>{% endif %}
+          {% if profile_ready %}<a href="/jobs"{% if request.url.path.startswith("/jobs") %} aria-current="page"{% endif %}>Jobs</a><a href="/applications"{% if request.url.path.startswith("/applications") %} aria-current="page"{% endif %}>Applications</a>{% endif %}
           <a href="/profiles"{% if request.url.path.startswith("/profiles") %} aria-current="page"{% endif %}>Profiles</a>
           {% if nav_profiles and nav_profiles|length > 1 %}
           <details class="nav-profile">
