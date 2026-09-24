@@ -472,6 +472,67 @@ class ResumeArtifact(Base):
 
 
 
+class AutoApplyRunStatus(str, Enum):
+    QUEUED = "queued"
+    RUNNING = "running"
+    PAUSED = "paused"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+
+
+class AutoApplyItemStatus(str, Enum):
+    QUEUED = "queued"
+    PREPARING = "preparing"
+    READY = "ready"
+    SUBMITTED = "submitted"
+    SKIPPED = "skipped"
+    FAILED = "failed"
+    NEEDS_REVIEW = "needs_review"
+
+
+class AutoApplyRun(Base):
+    """Durable, user-controlled batch of application preparation/submission work."""
+
+    __tablename__ = "auto_apply_runs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("users.id", ondelete="cascade"), nullable=False, index=True)
+    profile_id: Mapped[int] = mapped_column(Integer, ForeignKey("profiles.id", ondelete="cascade"), nullable=False, index=True)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default=AutoApplyRunStatus.QUEUED.value, index=True)
+    max_applications: Mapped[int] = mapped_column(Integer, nullable=False, default=10)
+    prepared_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    submitted_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    failed_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    requires_review: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False, unique=True)
+    started_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+
+class AutoApplyItem(Base):
+    """One job in an auto-apply run. Keeps preparation separate from external submission."""
+
+    __tablename__ = "auto_apply_items"
+    __table_args__ = (
+        UniqueConstraint("run_id", "listing_id", name="uq_auto_apply_run_listing"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    run_id: Mapped[int] = mapped_column(Integer, ForeignKey("auto_apply_runs.id", ondelete="cascade"), nullable=False, index=True)
+    application_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("applications.id", ondelete="set null"), nullable=True, index=True)
+    listing_id: Mapped[int] = mapped_column(Integer, ForeignKey("job_listings.id", ondelete="cascade"), nullable=False, index=True)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default=AutoApplyItemStatus.QUEUED.value, index=True)
+    attempt_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    requires_review: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    review_reason: Mapped[str] = mapped_column(Text, default="")
+    last_error: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+
 class ApplicationStatus(str, Enum):
     DRAFT = "draft"
     READY = "ready"
