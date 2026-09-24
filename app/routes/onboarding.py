@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import uuid
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -9,7 +10,14 @@ from sqlalchemy.orm import Session
 
 from app.config import project_path
 from app.db import get_db
-from app.models import User
+from app.models import (
+    ProfileEducation,
+    ProfileExperience,
+    ProfileProject,
+    ProfileSkill,
+    User,
+)
+from app.profile.cv import register_cv_version
 from app.profile.loader import contact_parts_from_profile, parse_cv_file
 from app.services import rescore_user_jobs_background
 from app.accounts import (
@@ -57,6 +65,49 @@ def _prev_section(current: str) -> str:
     return keys[max(idx - 1, 0)]
 
 
+
+def _sync_structured_profile(db: Session, profile_row, profile: dict) -> None:
+    """Project confirmed extraction into queryable normalized tables."""
+    # Only seed normalized records when this profile does not already have
+    # structured data. Manual edits made in the Phase 4 editor must survive
+    # later onboarding/profile confirmations.
+    if db.query(ProfileSkill).filter(ProfileSkill.profile_id == profile_row.id).count() == 0:
+        for index, name in enumerate(profile.get("skills") or []):
+            value = str(name).strip()[:255]
+            if value:
+                db.add(ProfileSkill(profile_id=profile_row.id, name=value, sort_order=index))
+
+    if db.query(ProfileExperience).filter(ProfileExperience.profile_id == profile_row.id).count() == 0:
+        for index, line in enumerate(profile.get("experience_raw") or []):
+            value = str(line).strip()
+            if value:
+                db.add(ProfileExperience(
+                    profile_id=profile_row.id,
+                    description=value[:10000],
+                    sort_order=index,
+                ))
+
+    if db.query(ProfileProject).filter(ProfileProject.profile_id == profile_row.id).count() == 0:
+        for index, line in enumerate(profile.get("projects_raw") or []):
+            value = str(line).strip()
+            if value:
+                db.add(ProfileProject(
+                    profile_id=profile_row.id,
+                    description=value[:10000],
+                    sort_order=index,
+                ))
+
+    if db.query(ProfileEducation).filter(ProfileEducation.profile_id == profile_row.id).count() == 0:
+        for index, line in enumerate(profile.get("education_raw") or []):
+            value = str(line).strip()
+            if value:
+                db.add(ProfileEducation(
+                    profile_id=profile_row.id,
+                    description=value[:10000],
+                    sort_order=index,
+                ))
+
+
 @router.get("/onboarding", response_class=HTMLResponse)
 def onboarding_upload(
     request: Request,
@@ -96,7 +147,8 @@ async def onboarding_upload_post(
     except ValueError as exc:
         return flash_redirect("/onboarding", str(exc))
 
-    dest = profile_data_dir(user.id, get_active_profile(db, user).id) / name
+    dest = profile_data_dir(user.id, get_active_profile(db, user).id) / "resumes" / f"{uuid.uuid4().hex}-{name}"
+    dest.parent.mkdir(parents=True, exist_ok=True)
     dest.write_bytes(content)
     try:
         parsed = parse_cv_file(dest)
@@ -125,6 +177,19 @@ async def onboarding_upload_post(
         up.github = chips["github"]
     if chips.get("website"):
         up.website = chips["website"]
+    content_type = (
+        "application/pdf"
+        if name.lower().endswith(".pdf")
+        else "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    )
+    register_cv_version(
+        db,
+        user,
+        up,
+        dest,
+        parsed,
+        content_type=content_type,
+    )
     db.add(up)
     db.commit()
     return RedirectResponse("/onboarding/review/basics", status_code=303)
@@ -251,6 +316,7 @@ async def onboarding_review_save(
         profile["education_raw"] = lines
     elif section == "confirm":
         up.profile_json = json.dumps(profile)
+        _sync_structured_profile(db, up, profile)
         up.profile_confirmed = True
         db.add(up)
         db.commit()

@@ -1,6 +1,10 @@
 from __future__ import annotations
 
 import uuid
+import asyncio
+import smtplib
+import logging
+from email.message import EmailMessage
 from collections.abc import AsyncGenerator
 
 from fastapi import Depends, Request
@@ -16,7 +20,7 @@ from httpx_oauth.clients.google import GoogleOAuth2
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from app.config import database_url, get_settings
+from app.config import database_url, get_settings, site_base_url
 from app.csrf import cookie_secure_flag
 from app.db import SessionLocal
 from app.models import OAuthAccount, User, UserRole
@@ -86,7 +90,7 @@ class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
             password=password,
             is_active=True,
             is_superuser=False,
-            is_verified=True,
+            is_verified=False,
         )
         user = await super().create(safe_create, safe=True, request=request)
         full_name = (getattr(user_create, "full_name", None) or "")[:255]
@@ -96,7 +100,7 @@ class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
             {
                 "role": UserRole.BASIC.value,
                 "is_superuser": False,
-                "is_verified": True,
+                "is_verified": False,
                 "full_name": full_name,
             },
         )
@@ -111,11 +115,13 @@ class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
         request: Request | None = None,
     ) -> User:
         # Never allow privilege escalation via API / console payloads.
+        email = getattr(user_update, "email", None)
+        email_changed = email is not None and email != user.email
         payload: dict = {}
         if getattr(user_update, "password", None) is not None:
             payload["password"] = user_update.password
-        if getattr(user_update, "email", None) is not None:
-            payload["email"] = user_update.email
+        if email is not None:
+            payload["email"] = email
         stripped = schemas.BaseUserUpdate(**payload)
         updated = await super().update(stripped, user, safe=True, request=request)
         role = normalize_role(getattr(updated, "role", None) or getattr(user, "role", None))
@@ -123,16 +129,45 @@ class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
         updates: dict = {
             "role": role,
             "is_superuser": False,
-            "is_verified": True,
+            "is_verified": False if email_changed else user.is_verified,
         }
         if full_name is not None:
             updates["full_name"] = str(full_name)[:255]
             updated.full_name = updates["full_name"]
         updated.role = role
         updated.is_superuser = False
-        updated.is_verified = True
+        updated.is_verified = updates["is_verified"]
         await self.user_db.update(updated, updates)
         return updated
+
+    async def on_after_request_verify(
+        self,
+        user: User,
+        token: str,
+        request: Request | None = None,
+    ) -> None:
+        settings = get_settings()
+        if not settings.smtp_host:
+            raise RuntimeError("SMTP is not configured")
+        message = EmailMessage()
+        message["Subject"] = "Verify your Vitae account"
+        message["From"] = settings.smtp_from
+        message["To"] = user.email
+        verify_url = f"{site_base_url()}/auth/verify?token={token}"
+        message.set_content(
+            f"Verify your Vitae account by opening this link:\n\n{verify_url}\n\n"
+            "If you did not create this account, you can ignore this email."
+        )
+
+        def _send() -> None:
+            with smtplib.SMTP(settings.smtp_host, settings.smtp_port, timeout=10) as smtp:
+                if settings.smtp_starttls:
+                    smtp.starttls()
+                if settings.smtp_username:
+                    smtp.login(settings.smtp_username, settings.smtp_password)
+                smtp.send_message(message)
+
+        await asyncio.to_thread(_send)
 
     async def on_after_register(self, user: User, request: Request | None = None) -> None:
         from app.accounts import ensure_account
@@ -144,6 +179,11 @@ class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
             db.commit()
         finally:
             db.close()
+
+        try:
+            await self.request_verify(user, request)
+        except Exception:
+            logging.getLogger(__name__).exception("Could not send verification email", extra={"user_id": str(user.id)})
 
 
 async def get_async_session() -> AsyncGenerator[AsyncSession, None]:

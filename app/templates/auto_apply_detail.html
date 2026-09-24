@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block title %}Auto-Apply Batch · Vitae{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div><p class="eyebrow">Batch #{{ run.id }}</p><h1>Auto-Apply run</h1><p class="meta">{{ run.status }} · {{ run.prepared_count }} prepared · {{ run.submitted_count }} submitted · {{ run.failed_count }} failed</p></div>
+  <div class="actions">
+    {% if run.status in ['queued','paused'] %}<form action="/auto-apply/runs/{{ run.id }}/start" method="post"><button class="btn btn-primary">Start</button></form>{% endif %}
+    {% if run.status == 'running' %}<form action="/auto-apply/runs/{{ run.id }}/pause" method="post"><button class="btn">Pause</button></form>{% endif %}
+    {% if run.status not in ['completed','failed','cancelled'] %}<form action="/auto-apply/runs/{{ run.id }}/cancel" method="post"><button class="btn">Cancel</button></form>{% endif %}
+  </div>
+</div>
+<div class="panel">
+  <p class="meta">Review is {% if run.requires_review %}required{% else %}not required{% endif %}. External employer submission remains a separate, explicit action.</p>
+  {% for item in items %}
+  {% set job = listing_map.get(item.listing_id) %}
+  <article class="application-row">
+    <div>
+      <strong>{{ job.title if job else 'Job unavailable' }}</strong>
+      <div class="meta">{{ job.company if job else '' }} · {{ item.status }}{% if item.requires_review %} · review required{% endif %}</div>
+      {% if item.review_reason %}<p>{{ item.review_reason }}</p>{% endif %}
+      {% if item.last_error %}<p class="meta">{{ item.last_error }}</p>{% endif %}
+    </div>
+    <div class="actions">
+      {% if item.requires_review and item.status not in ['submitted','skipped'] %}
+      <form action="/auto-apply/items/{{ item.id }}/review" method="post"><input name="reason" placeholder="Review reason" /><button class="btn">Needs review</button></form>
+      {% endif %}
+      {% if item.status not in ['submitted','skipped'] %}
+      <form action="/auto-apply/items/{{ item.id }}/submit" method="post"><input name="external_application_id" placeholder="Employer ID" /><input name="external_url" placeholder="Employer URL" /><button class="btn btn-ok">Mark submitted</button></form>
+      {% endif %}
+    </div>
+  </article>
+  {% else %}<p class="meta">No jobs in this batch.</p>{% endfor %}
+</div>
+{% endblock %}

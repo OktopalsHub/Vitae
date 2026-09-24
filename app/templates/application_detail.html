@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+{% block title %}Application · Vitae{% endblock %}
+{% block content %}
+<div class="detail-hero">
+  <div class="detail-hero-top">
+    <a class="btn" href="/applications">← Applications</a>
+    {% if listing and listing.url %}
+    <a class="btn" href="{{ listing.url|safe_http_url }}" target="_blank" rel="noopener">Open employer page</a>
+    {% endif %}
+  </div>
+  <h1>{{ listing.title if listing else "Application" }}</h1>
+  <p class="detail-meta">
+    {% if listing and listing.company %}<span>{{ listing.company }}</span><span class="dot">·</span>{% endif %}
+    <span class="badge {{ application.status }}">{{ application.status.replace('_', ' ') }}</span>
+    {% if application.applied_at %}<span class="dot">·</span><span>Submitted {{ application.applied_at.strftime('%Y-%m-%d') }}</span>{% endif %}
+  </p>
+</div>
+
+<div class="grid-2">
+  <div class="detail-left">
+    <div class="panel detail-section">
+      <h3 class="rule-title" style="margin-top:0">Lifecycle</h3>
+      <form action="/applications/{{ application.id }}/status" method="post">
+        <label>Move to
+          <select name="status">
+            {% for item in statuses %}
+            <option value="{{ item }}" {% if item == application.status %}selected{% endif %}>{{ item.replace('_', ' ')|title }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label style="margin-top:var(--s3)">Note
+          <textarea name="note" placeholder="Interview note, recruiter update, rejection reason, next step...">{{ application.notes }}</textarea>
+        </label>
+        <button class="btn btn-primary" type="submit" style="margin-top:var(--s3)">Update status</button>
+      </form>
+    </div>
+
+    <div class="panel detail-section">
+      <h3 class="rule-title" style="margin-top:0">History</h3>
+      <div class="timeline">
+        {% for event in events %}
+        <div class="timeline-item">
+          <strong>{{ event.to_status.replace('_', ' ')|title }}</strong>
+          {% if event.from_status %}<span class="meta"> from {{ event.from_status.replace('_', ' ') }}</span>{% endif %}
+          <div class="meta">{{ event.created_at.strftime('%Y-%m-%d %H:%M') }}</div>
+          {% if event.note %}<p style="margin:var(--s1) 0 0">{{ event.note }}</p>{% endif %}
+        </div>
+        {% else %}
+        <p class="meta">No history yet.</p>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+
+  <div class="detail-right">
+    <div class="panel detail-section">
+      <div class="actions" style="justify-content:space-between">
+        <h3 class="rule-title" style="margin:0">Submitted package</h3>
+        <form action="/applications/{{ application.id }}/refresh" method="post">
+          <button class="btn" type="submit">Refresh draft</button>
+        </form>
+      </div>
+      <p class="meta">This is the exact application copy Vitae saved for this application. Refresh is available only before submission.</p>
+
+      {% if application.cover_blurb %}
+      <label>Cover note
+        <textarea readonly>{{ application.cover_blurb }}</textarea>
+      </label>
+      {% endif %}
+
+      {% if answers %}
+      <div class="chip-list" style="margin-top:var(--s3)">
+        {% for item in answers %}
+        <div class="chip" style="align-items:flex-start; flex-direction:column">
+          <strong>{{ item.question }}</strong>
+          <span style="white-space:pre-wrap">{{ item.answer }}</span>
+        </div>
+        {% endfor %}
+      </div>
+      {% endif %}
+
+      {% if application.resume_artifact_id %}
+      <p style="margin-top:var(--s3)">A tailored resume artifact is attached to this application record.</p>
+      {% else %}
+      <p class="meta" style="margin-top:var(--s3)">No tailored resume was generated when this application was created.</p>
+      {% endif %}
+    </div>
+
+    <div class="panel detail-section">
+      <h3 class="rule-title" style="margin-top:0">Submission details</h3>
+      <form action="/applications/{{ application.id }}/status" method="post">
+        <input type="hidden" name="status" value="submitted" />
+        <label>Employer application ID
+          <input name="external_application_id" value="{{ application.external_application_id }}" placeholder="Optional" />
+        </label>
+        <label style="margin-top:var(--s2)">Employer application URL
+          <input name="external_url" type="url" value="{{ application.external_url }}" placeholder="https://..." />
+        </label>
+        <button class="btn btn-ok" type="submit" style="margin-top:var(--s3)" {% if application.status == 'submitted' %}disabled{% endif %}>Mark as submitted</button>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}

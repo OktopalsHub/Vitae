@@ -23,9 +23,9 @@ from app.auth import (
 )
 from app.config import assert_secure_settings, ensure_dirs, get_settings, project_path, warn_site_settings
 from app.csrf import CSRFMiddleware, cookie_secure_flag
-from app.db import init_db
+from app.db import assert_database_migrated
 from app.rate_limit import RateLimitExceeded, enforce
-from app.routes import admin, auth_pages, billing, jobs, onboarding, profiles, settings, site
+from app.routes import auto_apply, admin, applications, auth_pages, billing, jobs, onboarding, profiles, settings, site
 from app.scheduler import start_catalogue_sync_task
 from app.web_helpers import LoginRequired, OnboardingRequired, ForbiddenFlash, safe_http_url
 
@@ -60,8 +60,8 @@ class AuthApiRateLimitMiddleware(BaseHTTPMiddleware):
 async def lifespan(_app: FastAPI):
     ensure_dirs()
     assert_secure_settings()
+    assert_database_migrated()
     warn_site_settings()
-    init_db()
     tasks = start_catalogue_sync_task()
     try:
         yield
@@ -77,7 +77,6 @@ async def lifespan(_app: FastAPI):
 
 ensure_dirs()
 assert_secure_settings()
-init_db()
 
 _settings = get_settings()
 _prod_like = (_settings.app_env or "").strip().lower() in {"production", "prod", "cloud"}
@@ -103,7 +102,7 @@ settings_cfg = _settings
 _oauth_cookie_secure = cookie_secure_flag()
 
 app.include_router(
-    fastapi_users.get_auth_router(auth_backend),
+    fastapi_users.get_auth_router(auth_backend, requires_verification=True),
     prefix="/auth",
     tags=["auth"],
 )
@@ -113,7 +112,7 @@ app.include_router(
     tags=["auth"],
 )
 app.include_router(
-    fastapi_users.get_users_router(UserRead, UserUpdate),
+    fastapi_users.get_users_router(UserRead, UserUpdate, requires_verification=True),
     prefix="/users",
     tags=["users"],
 )
@@ -174,6 +173,8 @@ else:
 app.include_router(auth_pages.router)
 app.include_router(onboarding.router)
 app.include_router(jobs.router)
+app.include_router(applications.router)
+app.include_router(auto_apply.router)
 app.include_router(settings.router)
 app.include_router(profiles.router)
 app.include_router(billing.router)
@@ -216,3 +217,12 @@ async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
 @app.get("/health")
 def health():
     return {"ok": True}
+
+
+app.include_router(
+    fastapi_users.get_verify_router(UserRead),
+    prefix="/auth",
+    tags=["auth"],
+)
+
+
