@@ -139,3 +139,34 @@ alembic upgrade head
 Migration `0009_llm_observability` creates the `llm_requests` metadata table.
 
 AI safety is a data-boundary control, not a guarantee that generated text is truthful. Vitae still uses post-validation and rule-based fallbacks when model output is missing, malformed, or incomplete.
+
+
+## Phase 8: Resume generation
+
+Generated resumes are now treated as immutable artifacts rather than temporary files.
+
+Each generation records:
+
+- profile and target listing
+- source master CV version
+- generator version
+- prompt version
+- whether the rule-based fallback was used
+- output directory
+- generated artifact metadata
+
+Each PDF/DOCX artifact records its format, filename, content type, size, storage key, and SHA-256 checksum.
+
+Every generation gets a unique output directory. Generating a new CV no longer deletes the previous generated files.
+
+Local filesystem access is behind `LocalResumeStorage`, which validates storage keys before reading or writing. This gives the application a clean boundary for a future object-storage implementation.
+
+Run:
+
+```bash
+alembic upgrade head
+```
+
+Migration `0010_resume_artifacts` creates `resume_generations` and `resume_artifacts`.
+
+Resume generation remains synchronous for now. Phase 11 moves this work to durable background workers.
