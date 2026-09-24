@@ -5,12 +5,12 @@ from app.applications import (
     get_or_create_application,
     transition_application,
 )
-from app.models import ApplicationStatus, JobListing
+from app.models import ApplicationEvent, ApplicationStatus, JobListing
 
 
 def _listing(db, user):
     row = JobListing(
-        public_id="application-test-job",
+        public_id=f"application-test-job-{user.id}",
         source="test",
         external_id="application-test",
         title="Backend Engineer",
@@ -57,7 +57,7 @@ def test_application_transition_records_submission(db_session, confirmed_user):
     assert row.status == ApplicationStatus.SUBMITTED.value
     assert row.applied_at is not None
     assert row.external_application_id == "ACME-123"
-    assert len(row.__class__.metadata.tables["application_events"].columns) > 0
+    events = db_session.query(ApplicationEvent).filter(ApplicationEvent.application_id == row.id).all()\n    assert [event.to_status for event in events] == ["draft", "submitted"]
 
 
 def test_terminal_application_cannot_move_back(db_session, confirmed_user):
