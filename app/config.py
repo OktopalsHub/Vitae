@@ -16,6 +16,8 @@ class Settings(BaseSettings):
     adzuna_app_id: str = ""
     adzuna_app_key: str = ""
     jooble_api_key: str = ""
+    # Optional open-web discovery via Firecrawl. Disabled unless explicitly enabled in config.yaml.
+    firecrawl_api_key: str = ""
     openai_api_key: str = ""
     openai_model: str = "gpt-4o-mini"
     gemini_api_key: str = ""
