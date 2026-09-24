@@ -273,6 +273,8 @@ class ListingMatchScore(Base):
     )
     match_score: Mapped[float] = mapped_column(Float, default=0.0, index=True)
     match_reasons: Mapped[str] = mapped_column(Text, default="")
+    breakdown_json: Mapped[str] = mapped_column(Text, default="{}")
+    algorithm_version: Mapped[str] = mapped_column(String(32), default="v2", index=True)
     fingerprint: Mapped[str] = mapped_column(String(64), default="", index=True)
     scored_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
 
