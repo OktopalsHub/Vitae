@@ -18,7 +18,9 @@ COPY alembic ./alembic
 COPY app ./app
 COPY scripts ./scripts
 
-RUN chmod +x scripts/*.sh
+RUN chmod +x scripts/*.sh \
+    && mkdir -p /app/data/users \
+    && chown -R 10001:10001 /app
 
 ENV PATH="/app/.venv/bin:$PATH"
 
