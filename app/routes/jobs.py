@@ -72,14 +72,25 @@ def _jobs_list_path(from_qs: str = "") -> str:
     return f"/jobs?{qs}"
 
 
-def _jobs_query_string(*, status: str, min_score: float, q: str, page: int | None = None) -> str:
+def _jobs_query_string(
+    *,
+    status: str,
+    min_score: float,
+    q: str,
+    page: int | None = None,
+    location: str = "",
+    remote_type: str = "",
+    employment_type: str = "",
+    experience_level: str = "",
+) -> str:
     params: dict[str, str | float | int] = {"min_score": int(min_score) if float(min_score).is_integer() else min_score}
-    if status:
-        params["status"] = status
-    if q:
-        params["q"] = q
-    if page and page > 1:
-        params["page"] = page
+    if status: params["status"] = status
+    if q: params["q"] = q
+    if location: params["location"] = location
+    if remote_type: params["remote_type"] = remote_type
+    if employment_type: params["employment_type"] = employment_type
+    if experience_level: params["experience_level"] = experience_level
+    if page and page > 1: params["page"] = page
     return urlencode(params)
 
 
@@ -156,7 +167,6 @@ def jobs_board(
             kind="user_rescore",
             queue="matching",
             payload={"user_id": str(user.id)},
-            idempotency_key=f"user-rescore:request:{user.id}:{active.id}",
         )
         db.commit()
 
@@ -189,7 +199,7 @@ def jobs_board(
     ai_ok, ai_reason = can_use_ai(db, user)
     suggest_min = max(0, int(threshold) - 10)
     def qs(page_value: int | None = None, *, status_value: str = status_norm, threshold_value: float = threshold) -> str:
-        return _jobs_query_string(status=status_value, min_score=threshold_value, q=q, page=page_value)
+        return _jobs_query_string(status=status_value, min_score=threshold_value, q=q, page=page_value, location=location, remote_type=remote_type, employment_type=employment_type, experience_level=experience_level)
 
     pager = {
         "page": page_num, "page_size": JOBS_PAGE_SIZE, "total": total, "total_pages": total_pages,
