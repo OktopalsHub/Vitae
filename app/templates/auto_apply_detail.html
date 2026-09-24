@@ -21,10 +21,13 @@
       {% if item.last_error %}<p class="meta">{{ item.last_error }}</p>{% endif %}
     </div>
     <div class="actions">
-      {% if item.requires_review and item.status not in ['submitted','skipped'] %}
-      <form action="/auto-apply/items/{{ item.id }}/review" method="post"><input name="reason" placeholder="Review reason" /><button class="btn">Needs review</button></form>
+      {% if item.status == 'needs_review' %}
+      <form action="/auto-apply/items/{{ item.id }}/approve" method="post"><button class="btn btn-ok">Approve</button></form>
       {% endif %}
-      {% if item.status not in ['submitted','skipped'] %}
+      {% if item.status in ['ready','needs_review'] %}
+      <form action="/auto-apply/items/{{ item.id }}/review" method="post"><input name="reason" placeholder="Review reason" /><button class="btn">Request review</button></form>
+      {% endif %}
+      {% if item.status == 'ready' %}
       <form action="/auto-apply/items/{{ item.id }}/submit" method="post"><input name="external_application_id" placeholder="Employer ID" /><input name="external_url" placeholder="Employer URL" /><button class="btn btn-ok">Mark submitted</button></form>
       {% endif %}
     </div>
