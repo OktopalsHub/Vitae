@@ -28,6 +28,9 @@ def upgrade() -> None:
             "listing_match_scores",
             sa.Column("algorithm_version", sa.String(32), nullable=False, server_default="v2"),
         )
+
+    indexes = {idx["name"] for idx in inspector.get_indexes("listing_match_scores")}
+    if "ix_listing_match_scores_algorithm_version" not in indexes:
         op.create_index(
             "ix_listing_match_scores_algorithm_version",
             "listing_match_scores",
