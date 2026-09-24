@@ -17,6 +17,8 @@ from slugify import slugify
 
 from app.config import project_path
 from app.llm import LLMCreds, has_llm, llm_complete
+from app.ai.contracts import TailoredResume
+from app.ai.safety import sanitize_untrusted_text
 from app.profile.loader import load_or_build_profile
 from app.generator.cv_prompts import SYSTEM_PROMPT
 from app.generator.cv_helpers import (
@@ -46,6 +48,8 @@ async def _llm_complete(prompt: str, creds: LLMCreds | None = None) -> str:
         max_tokens=4000,
         temperature=0.3,
         creds=creds,
+        purpose="cv_tailor",
+        prompt_version="cv_tailor.v2",
     )
 
 
@@ -72,7 +76,7 @@ async def build_tailored_content(
         indent=2,
     )[:14000]
 
-    jd_text = (job.description or "")[:8000]
+    jd_text = sanitize_untrusted_text(job.description, limit=8000)
     prompt = (
         f"CANDIDATE PROFILE (source of truth — do not add anything not in this data):\n"
         f"{profile_context}\n\n"
@@ -100,6 +104,7 @@ async def build_tailored_content(
     try:
         raw = await _llm_complete(prompt, creds=creds)
         data = extract_json(raw)
+        data = TailoredResume.model_validate(data).model_dump()
         if not data.get("summary") or not data.get("experiences"):
             raise ValueError("Incomplete LLM resume")
         return post_validate_resume(data, job), False
