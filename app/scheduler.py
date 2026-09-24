@@ -28,7 +28,6 @@ def enqueue_catalogue_sync() -> int:
             db,
             kind="catalogue_sync",
             queue="catalogue",
-            idempotency_key="catalogue-sync:singleton",
         )
         db.commit()
         return job.id
@@ -44,7 +43,6 @@ def enqueue_user_rank_refresh() -> int:
                 kind="user_rescore",
                 queue="matching",
                 payload={"user_id": str(uid)},
-                idempotency_key=f"user-rescore:{uid}",
             )
             count += 1
         db.commit()
