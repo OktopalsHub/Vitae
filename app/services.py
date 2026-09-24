@@ -22,7 +22,7 @@ from app.matching.score_cache import (
     upsert_match_score,
 )
 from app.db import SessionLocal
-from app.matching.scorer import reasons_to_json, score_job
+from app.matching.scorer import MATCHING_ALGORITHM_VERSION, reasons_to_json, score_job_versioned
 from app.models import (
     JobCard,
     JobListing,
@@ -93,9 +93,9 @@ def _score_payload(listing: JobListing) -> dict[str, Any]:
 
 def score_listing(
     listing: JobListing, profile: dict[str, Any], cfg: dict[str, Any]
-) -> tuple[float, str]:
-    score, reasons = score_job(_score_payload(listing), profile, cfg)
-    return float(score), reasons_to_json(reasons)
+) -> tuple[float, str, str]:
+    result = score_job_versioned(_score_payload(listing), profile, cfg)
+    return float(result["score"]), reasons_to_json(result["reasons"]), json.dumps(result, ensure_ascii=False)
 
 
 def job_card_from(
@@ -316,7 +316,7 @@ def ensure_user_job(
         return row
     profile = profile if profile is not None else load_user_profile_dict(db, user)
     cfg = cfg if cfg is not None else load_user_settings(db, user)
-    score, reasons = score_listing(listing, profile, cfg)
+    score, reasons, _breakdown = score_listing(listing, profile, cfg)
     row = UserJob(
         user_id=user.id,
         profile_id=active.id,
@@ -390,13 +390,15 @@ def list_job_cards(
     if listings and not score_map:
         existing_rows = load_all_scores_for_profile(db, active.id)
         for i, listing in enumerate(listings, start=1):
-            score, reasons = score_listing_cached(listing, profile, cfg)
+            score, reasons, breakdown = score_listing_cached(listing, profile, cfg)
             row = upsert_match_score(
                 db,
                 profile_id=active.id,
                 listing_id=listing.id,
                 match_score=score,
                 match_reasons=reasons,
+                breakdown_json=breakdown,
+                algorithm_version=MATCHING_ALGORITHM_VERSION,
                 fingerprint=fingerprint,
                 existing=existing_rows.get(listing.id),
             )
@@ -453,7 +455,7 @@ def list_job_cards(
         else:
             if existing_rows is None:
                 existing_rows = load_all_scores_for_profile(db, active.id)
-            score, reasons = score_listing_cached(listing, profile, cfg)
+            score, reasons, breakdown = score_listing_cached(listing, profile, cfg)
             upsert_match_score(
                 db,
                 profile_id=active.id,
@@ -510,13 +512,15 @@ def refresh_profile_match_scores(db: Session, user: User) -> int:
     existing = load_all_scores_for_profile(db, active.id)
     n = 0
     for listing in listings:
-        score, reasons = score_listing_cached(listing, profile, cfg)
+        score, reasons, breakdown = score_listing_cached(listing, profile, cfg)
         upsert_match_score(
             db,
             profile_id=active.id,
             listing_id=listing.id,
             match_score=score,
             match_reasons=reasons,
+            breakdown_json=breakdown,
+            algorithm_version=MATCHING_ALGORITHM_VERSION,
             fingerprint=fingerprint,
             existing=existing.get(listing.id),
         )
