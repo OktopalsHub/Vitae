@@ -118,7 +118,7 @@ sources:
   wellfound: true
   ziprecruiter: false
   djinni: true
-  firecrawl: false
+  firecrawl: true
 
 djinni_urls:
   - "https://djinni.co/jobs/rss/"
