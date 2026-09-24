@@ -90,7 +90,7 @@ class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
             password=password,
             is_active=True,
             is_superuser=False,
-            is_verified=False,
+            is_verified=True,
         )
         user = await super().create(safe_create, safe=True, request=request)
         full_name = (getattr(user_create, "full_name", None) or "")[:255]
@@ -115,13 +115,11 @@ class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
         request: Request | None = None,
     ) -> User:
         # Never allow privilege escalation via API / console payloads.
-        email = getattr(user_update, "email", None)
-        email_changed = email is not None and email != user.email
         payload: dict = {}
         if getattr(user_update, "password", None) is not None:
             payload["password"] = user_update.password
-        if email is not None:
-            payload["email"] = email
+        if getattr(user_update, "email", None) is not None:
+            payload["email"] = user_update.email
         stripped = schemas.BaseUserUpdate(**payload)
         updated = await super().update(stripped, user, safe=True, request=request)
         role = normalize_role(getattr(updated, "role", None) or getattr(user, "role", None))
@@ -129,14 +127,14 @@ class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
         updates: dict = {
             "role": role,
             "is_superuser": False,
-            "is_verified": False if email_changed else user.is_verified,
+            "is_verified": True,
         }
         if full_name is not None:
             updates["full_name"] = str(full_name)[:255]
             updated.full_name = updates["full_name"]
         updated.role = role
         updated.is_superuser = False
-        updated.is_verified = updates["is_verified"]
+        updated.is_verified = True
         await self.user_db.update(updated, updates)
         return updated
 

@@ -6,6 +6,7 @@ from uuid import uuid4
 from sqlalchemy.orm import Session
 
 from app.applications import get_or_create_application
+from app.workers.queue import enqueue_job
 from app.models import (
     ApplicationStatus,
     AutoApplyItem,
@@ -118,6 +119,18 @@ def start_run(db: Session, user: User, run_id: int) -> AutoApplyRun:
     run.status = AutoApplyRunStatus.RUNNING.value
     run.started_at = run.started_at or datetime.utcnow()
     run.updated_at = datetime.utcnow()
+    items = db.query(AutoApplyItem).filter(
+        AutoApplyItem.run_id == run.id,
+        AutoApplyItem.status == AutoApplyItemStatus.QUEUED.value,
+    ).all()
+    for item in items:
+        enqueue_job(
+            db,
+            kind="auto_apply_prepare",
+            queue="auto-apply",
+            payload={"item_id": item.id},
+            idempotency_key=f"auto-apply-item:{item.id}",
+        )
     db.flush()
     return run
 
@@ -184,6 +197,22 @@ def mark_item_review(
     return item
 
 
+def approve_item(db: Session, user: User, item_id: int) -> AutoApplyItem:
+    item = db.get(AutoApplyItem, item_id)
+    if item is None:
+        raise PermissionError("Auto-apply item not found")
+    run = _owned_run(db, user, item.run_id)
+    if run.status != AutoApplyRunStatus.RUNNING.value:
+        raise ValueError("Run is not active")
+    if item.status != AutoApplyItemStatus.NEEDS_REVIEW.value:
+        raise ValueError("Item does not require approval")
+    item.status = AutoApplyItemStatus.READY.value
+    item.requires_review = False
+    item.review_reason = ""
+    item.updated_at = datetime.utcnow()
+    db.flush()
+    return item
+
 def mark_item_submitted(
     db: Session,
     user: User,
@@ -205,6 +234,13 @@ def mark_item_submitted(
         raise ValueError("Run is no longer active")
     if item.application_id is None:
         raise ValueError("Application is missing")
+    if item.status not in {
+        AutoApplyItemStatus.READY.value,
+        AutoApplyItemStatus.NEEDS_REVIEW.value,
+    }:
+        raise ValueError("Item is not prepared for submission")
+    if item.requires_review and item.status != AutoApplyItemStatus.READY.value:
+        raise ValueError("Review the prepared application before submitting")
     from app.applications import transition_application
 
     application = transition_application(

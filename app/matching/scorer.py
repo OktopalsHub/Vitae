@@ -19,13 +19,11 @@ def score_job_versioned(
         "connection_summary": detail["connection_summary"],
     }
 
-
+from __future__ import annotations
 
 import json
 import re
 from typing import Any
-
-from __future__ import annotations
 
 from app.matching.filters import (
     has_strong_title_signal,
