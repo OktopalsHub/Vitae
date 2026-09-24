@@ -1,0 +1,66 @@
+services:
+  web:
+    build:
+      context: .
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      PORT: "8765"
+      WEB_WORKERS: "1"
+      RUN_SCHEDULER: "0"
+    command: ["./scripts/start-web.sh"]
+    ports:
+      - "8765:8765"
+    stop_grace_period: 30s
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8765/health/ready', timeout=3)"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  worker-default:
+    build:
+      context: .
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      WORKER_QUEUE: "default"
+      WORKER_POLL_SECONDS: "2"
+    command: ["./scripts/start-worker.sh"]
+    stop_grace_period: 60s
+
+  worker-catalogue:
+    build:
+      context: .
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      WORKER_QUEUE: "catalogue"
+      WORKER_POLL_SECONDS: "2"
+    command: ["./scripts/start-worker.sh"]
+    stop_grace_period: 60s
+
+  worker-matching:
+    build:
+      context: .
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      WORKER_QUEUE: "matching"
+      WORKER_POLL_SECONDS: "2"
+    command: ["./scripts/start-worker.sh"]
+    stop_grace_period: 60s
+
+  scheduler:
+    build:
+      context: .
+    restart: unless-stopped
+    env_file:
+      - .env
+    command: ["./scripts/start-scheduler.sh"]
+    stop_grace_period: 30s
