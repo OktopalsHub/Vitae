@@ -26,5 +26,6 @@ fastapi-users[sqlalchemy,oauth]>=14.0.0
 httpx-oauth>=0.15.0
 cryptography>=43.0.0
 email-validator>=2.2.0
+boto3>=1.35.0
 aiosqlite>=0.20.0
 pypdf>=5.0.0
