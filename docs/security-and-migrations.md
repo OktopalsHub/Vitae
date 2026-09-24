@@ -97,3 +97,12 @@ alembic upgrade head
 ```
 
 For a source outage, investigate the source health row before treating missing jobs as closed. A sync can finish with `failed_sources > 0`; this means the catalogue was partially refreshed and stale jobs from failed sources were intentionally preserved.
+
+
+## Phase 6: Matching platform
+
+Matching now has an explicit algorithm version (v2) and a structured scoring contract. Persisted match scores store the algorithm version, fingerprint, human-readable reasons, and a machine-readable breakdown containing positive signals, penalties, skill hits/gaps, stack signals, and a connection summary.
+
+The profile/config fingerprint includes the matching algorithm version. Changing the algorithm therefore invalidates old cached scores instead of silently serving results from an older scorer.
+
+The matching result is deterministic and explainable. It does not use an opaque score without retaining the signals that produced it.
