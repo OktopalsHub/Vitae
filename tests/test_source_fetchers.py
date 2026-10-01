@@ -4,12 +4,22 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.sources import fetchers
 from app.sources import boards as fetchers_boards
 from app.sources import bruntwork as fetchers_bruntwork
 from app.sources import company as fetchers_company
 from app.sources import aggregators as fetchers_agg
 from app.sources.base import RawJob
+
+# Import each fetcher from the module that owns it. The old
+# app.sources.fetchers re-export shim was deleted.
+fetch_greenhouse = fetchers_boards.fetch_greenhouse
+fetch_lever = fetchers_boards.fetch_lever
+fetch_ashby = fetchers_boards.fetch_ashby
+fetch_bruntwork = fetchers_bruntwork.fetch_bruntwork
+fetch_remoteok = fetchers_agg.fetch_remoteok
+fetch_remotive = fetchers_agg.fetch_remotive
+fetch_arbeitnow = fetchers_agg.fetch_arbeitnow
+fetch_jooble = fetchers_agg.fetch_jooble
 
 
 class _FakeResponse:
@@ -84,7 +94,7 @@ async def test_fetch_greenhouse_basic(monkeypatch):
     }
     monkeypatch.setattr(fetchers_boards.httpx, "AsyncClient", lambda *a, **kw: _FakeAsyncClient(responses))
 
-    jobs = await fetchers.fetch_greenhouse("testco")
+    jobs = await fetch_greenhouse("testco")
 
     assert len(jobs) == 1
     assert jobs[0].source == "greenhouse"
@@ -107,14 +117,14 @@ async def test_fetch_greenhouse_returns_multiple(monkeypatch):
     }
     monkeypatch.setattr(fetchers_boards.httpx, "AsyncClient", lambda *a, **kw: _FakeAsyncClient(responses))
 
-    jobs = await fetchers.fetch_greenhouse("testco")
+    jobs = await fetch_greenhouse("testco")
 
     assert len(jobs) == 2
 
 
 @pytest.mark.asyncio
 async def test_fetch_greenhouse_invalid_board():
-    jobs = await fetchers.fetch_greenhouse("../../../etc/passwd")
+    jobs = await fetch_greenhouse("../../../etc/passwd")
     assert jobs == []
 
 
@@ -139,7 +149,7 @@ async def test_fetch_lever_basic(monkeypatch):
     }
     monkeypatch.setattr(fetchers_boards.httpx, "AsyncClient", lambda *a, **kw: _FakeAsyncClient(responses))
 
-    jobs = await fetchers.fetch_lever("testco")
+    jobs = await fetch_lever("testco")
 
     assert len(jobs) == 1
     assert jobs[0].source == "lever"
@@ -189,7 +199,7 @@ async def test_fetch_ashby_uses_public_job_board_api(monkeypatch):
     }
     monkeypatch.setattr(fetchers_boards.httpx, "AsyncClient", lambda *a, **kw: _FakeAsyncClient(responses))
 
-    jobs = await fetchers.fetch_ashby("Scale Army Careers")
+    jobs = await fetch_ashby("Scale Army Careers")
 
     assert len(jobs) == 1
     job = jobs[0]
@@ -230,7 +240,7 @@ async def test_fetch_bruntwork_scrapes_search_and_detail_pages(monkeypatch):
     }
     monkeypatch.setattr(fetchers_bruntwork.httpx, "AsyncClient", lambda *a, **kw: _FakeAsyncClient(responses))
 
-    jobs = await fetchers.fetch_bruntwork()
+    jobs = await fetch_bruntwork()
 
     assert len(jobs) == 1
     job = jobs[0]
@@ -258,7 +268,7 @@ async def test_fetch_remoteok_filters_by_title(monkeypatch):
     }
     monkeypatch.setattr(fetchers_agg.httpx, "AsyncClient", lambda *a, **kw: _FakeAsyncClient(responses))
 
-    jobs = await fetchers.fetch_remoteok()
+    jobs = await fetch_remoteok()
 
     assert len(jobs) == 1
     assert jobs[0].title == "Backend Engineer"
@@ -280,7 +290,7 @@ async def test_fetch_remotive_basic(monkeypatch):
     }
     monkeypatch.setattr(fetchers_agg.httpx, "AsyncClient", lambda *a, **kw: _FakeAsyncClient(responses))
 
-    jobs = await fetchers.fetch_remotive()
+    jobs = await fetch_remotive()
 
     assert len(jobs) == 1
     assert jobs[0].source == "remotive"
@@ -303,7 +313,7 @@ async def test_fetch_arbeitnow_basic(monkeypatch):
     }
     monkeypatch.setattr(fetchers_agg.httpx, "AsyncClient", lambda *a, **kw: _FakeAsyncClient(responses))
 
-    jobs = await fetchers.fetch_arbeitnow()
+    jobs = await fetch_arbeitnow()
 
     assert len(jobs) == 1
     assert jobs[0].source == "arbeitnow"
@@ -322,7 +332,7 @@ async def test_fetch_jooble_basic(monkeypatch):
     }
     monkeypatch.setattr(fetchers_agg.httpx, "AsyncClient", lambda *a, **kw: _FakeAsyncClient({}, post_responses))
 
-    jobs = await fetchers.fetch_jooble("test-key", ["nodejs"])
+    jobs = await fetch_jooble("test-key", ["nodejs"])
 
     assert len(jobs) == 1
     assert jobs[0].source == "jooble"
@@ -330,7 +340,7 @@ async def test_fetch_jooble_basic(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_fetch_jooble_empty_key():
-    jobs = await fetchers.fetch_jooble("", ["nodejs"])
+    jobs = await fetch_jooble("", ["nodejs"])
     assert jobs == []
 
 
@@ -345,7 +355,7 @@ async def test_fetch_greenhouse_returns_empty_on_error(monkeypatch):
     }
     monkeypatch.setattr(fetchers_boards.httpx, "AsyncClient", lambda *a, **kw: _FakeAsyncClient(responses))
 
-    jobs = await fetchers.fetch_greenhouse("testco")
+    jobs = await fetch_greenhouse("testco")
     assert jobs == []
 
 
@@ -356,7 +366,7 @@ async def test_fetch_lever_returns_empty_on_error(monkeypatch):
     }
     monkeypatch.setattr(fetchers_boards.httpx, "AsyncClient", lambda *a, **kw: _FakeAsyncClient(responses))
 
-    jobs = await fetchers.fetch_lever("testco")
+    jobs = await fetch_lever("testco")
     assert jobs == []
 
 
@@ -367,7 +377,7 @@ async def test_fetch_ashby_returns_empty_on_error(monkeypatch):
     }
     monkeypatch.setattr(fetchers_boards.httpx, "AsyncClient", lambda *a, **kw: _FakeAsyncClient(responses))
 
-    jobs = await fetchers.fetch_ashby("test")
+    jobs = await fetch_ashby("test")
     assert jobs == []
 
 
@@ -388,7 +398,7 @@ async def test_fetch_greenhouse_respects_max_results(monkeypatch):
     }
     monkeypatch.setattr(fetchers_boards.httpx, "AsyncClient", lambda *a, **kw: _FakeAsyncClient(responses))
 
-    jobs = await fetchers.fetch_greenhouse("testco", max_results=3)
+    jobs = await fetch_greenhouse("testco", max_results=3)
     assert len(jobs) == 3
 
 

@@ -225,7 +225,6 @@ def template_ctx(
         full_access = bool(pre_full_access) if pre_full_access is not None else False
         profile_ready = bool(pre_profile_ready) if pre_profile_ready is not None else False
 
-    from app.auth import github_oauth_client, google_oauth_client
     from app.roles import is_admin, is_super_admin, user_role
 
     settings = get_settings()
@@ -244,8 +243,6 @@ def template_ctx(
         "active_profile": active_profile,
         "nav_profiles": nav_profiles,
         "csrf_token": csrf_token_for_template(request) if request is not None else "",
-        "google_oauth": bool(google_oauth_client),
-        "github_oauth": bool(github_oauth_client),
         "user_role": user_role(user) if user else "basic",
         "is_admin": is_admin(user),
         "is_super_admin": is_super_admin(user),

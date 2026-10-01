@@ -104,17 +104,14 @@ async def register_form(
         )
     except UserAlreadyExists:
         return RedirectResponse(
-            url=(
-                "/login?error="
-                + quote(
-                    "That email is already registered. Sign in with password, Google, or GitHub."
-                )
-            ),
+            url="/login?error=" + quote("That email is already registered. Sign in instead."),
             status_code=303,
         )
+    # Accounts are created already verified (UserManager.create sets
+    # is_verified=True) and no verification mail is sent, so point the user
+    # straight at signing in.
     return RedirectResponse(
-        url="/login?error="
-        + quote("Account created. Check your email to verify your account before signing in."),
+        url="/login?error=" + quote("Account created. Sign in to continue."),
         status_code=303,
     )
 

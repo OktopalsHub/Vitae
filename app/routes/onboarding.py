@@ -323,8 +323,8 @@ async def onboarding_review_save(
         # Full catalogue rescore is too slow for the request (Neon round-trips).
         background_tasks.add_task(rescore_user_jobs_background, user.id)
         return flash_redirect(
-            "/billing",
-            "Profile saved. Choose an AI plan, or skip to continue to jobs.",
+            "/jobs",
+            "Profile saved. Your matches are ready.",
         )
 
     up.profile_json = json.dumps(profile)

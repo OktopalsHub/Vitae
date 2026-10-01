@@ -11,8 +11,6 @@ from fastapi_users.authentication import (
     JWTStrategy,
 )
 from fastapi_users.db import SQLAlchemyUserDatabase
-from httpx_oauth.clients.github import GitHubOAuth2
-from httpx_oauth.clients.google import GoogleOAuth2
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
@@ -187,15 +185,3 @@ fastapi_users = FastAPIUsers[User, uuid.UUID](get_user_manager, [auth_backend])
 
 current_active_user = fastapi_users.current_user(active=True)
 optional_current_user = fastapi_users.current_user(active=True, optional=True)
-
-settings = get_settings()
-google_oauth_client = (
-    GoogleOAuth2(settings.google_oauth_client_id, settings.google_oauth_client_secret)
-    if settings.google_oauth_client_id and settings.google_oauth_client_secret
-    else None
-)
-github_oauth_client = (
-    GitHubOAuth2(settings.github_oauth_client_id, settings.github_oauth_client_secret)
-    if settings.github_oauth_client_id and settings.github_oauth_client_secret
-    else None
-)

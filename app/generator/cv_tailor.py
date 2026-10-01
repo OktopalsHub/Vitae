@@ -50,7 +50,11 @@ async def _llm_complete(prompt: str, creds: LLMCreds | None = None) -> str:
         prompt=prompt,
         system=SYSTEM_PROMPT,
         json_mode=True,
-        max_tokens=4000,
+        # A full tailored resume (summary + skills + every experience bullet +
+        # projects + education) overruns 4000 tokens and gets truncated
+        # mid-object, which surfaces as a JSON validation error on providers
+        # that enforce the response_format schema.
+        max_tokens=8000,
         temperature=0.3,
         creds=creds,
         purpose="cv_tailor",

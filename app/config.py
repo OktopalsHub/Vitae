@@ -34,8 +34,14 @@ class Settings(BaseSettings):
     openai_model: str = "gpt-4o-mini"
     gemini_api_key: str = ""
     gemini_model: str = "gemini-2.5-flash"
-    # Platform only: openai | gemini (BYOK users pick their own provider in Settings)
+    # Groq is OpenAI-compatible and very fast/cheap — used for platform AI and
+    # as a fallback when the preferred provider is unavailable or rate limited.
+    groq_api_key: str = ""
+    groq_model: str = "llama-3.3-70b-versatile"
+    # Platform only: openai | gemini | groq (BYOK users pick their own provider in Settings)
     llm_provider: str = ""
+    # Tried in order when the preferred platform provider fails. Empty disables fallback.
+    llm_fallback_order: str = "openai,groq"
     app_host: str = "127.0.0.1"
     app_port: int = 8765
     app_env: str = "development"
@@ -47,10 +53,6 @@ class Settings(BaseSettings):
     site_url: str = ""
     # Google Search Console HTML-tag verification content (meta content value only).
     google_site_verification: str = ""
-    google_oauth_client_id: str = ""
-    google_oauth_client_secret: str = ""
-    github_oauth_client_id: str = ""
-    github_oauth_client_secret: str = ""
     bachs_api_key: str = ""
     bachs_api_base: str = ""
     bachs_webhook_secret: str = ""

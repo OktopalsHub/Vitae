@@ -39,30 +39,6 @@
     {% endfor %}
   </div>
 
-  {% if not full_access %}
-  <aside class="jobs-unlock" aria-label="Free openings">
-    <div class="jobs-unlock__track" aria-hidden="true">
-      {% for i in range(free_clear) %}
-      <span class="jobs-unlock__pip {% if i < free_used %}is-used{% elif free_remaining %}is-open{% else %}is-spent{% endif %}"></span>
-      {% endfor %}
-    </div>
-    <div class="jobs-unlock__copy">
-      {% if free_remaining %}
-      <p class="jobs-unlock__title">{{ free_remaining }} free opening{% if free_remaining != 1 %}s{% endif %} left</p>
-      <p class="meta">Locked rows still count — open any match to unlock it.</p>
-      {% else %}
-      <p class="jobs-unlock__title">Free openings used · {{ locked_count }} locked</p>
-      <p class="meta">Subscribe to open every fit and unlock AI tailored CVs.</p>
-      {% endif %}
-    </div>
-    {% if not free_remaining %}
-    <a class="btn btn-primary" href="/billing">Subscribe</a>
-    {% else %}
-    <a class="btn" href="/billing">See plans</a>
-    {% endif %}
-  </aside>
-  {% endif %}
-
   <form class="jobs-toolbar" method="get" action="/jobs" role="search">
     <label class="jobs-toolbar__search">Search
       <input type="search" name="q" value="{{ q }}" placeholder="Role, company, or place" autocomplete="off" />
@@ -90,34 +66,18 @@
   <ul class="job-list">
     {% for row in jobs %}
     {% set job = row.card %}
-    <li class="job-row {% if row.blurred %}is-blurred{% elif row.unlocked and not full_access %}is-unlocked{% endif %}">
-      {% if row.openable %}
+    <li class="job-row">
       <a class="job-row__link" href="/jobs/{{ job.public_id }}{% if pager.base_qs %}?from={{ pager.base_qs|urlencode }}{% endif %}">
-      {% else %}
-      <a class="job-row__link" href="/billing?flash=You%27ve%20used%20your%20free%20openings.%20Subscribe%20to%20unlock%20more%20roles.">
-      {% endif %}
-        {% if row.blurred %}
-        <span class="job-row__score" aria-label="Locked match"><span class="ring is-low"><span class="ring__label">··</span></span></span>
-        {% else %}
         {% set score = job.match_score|round|int %}
         <span class="job-row__score" aria-label="{{ score }} percent match"><span class="ring {% if score >= 75 %}is-high{% elif score >= 50 %}is-mid{% else %}is-low{% endif %}" data-ring="{{ score }}"><span class="ring__label">{{ score }}</span></span></span>
-        {% endif %}
         <span class="job-row__body">
-          <span class="job-row__title">{% if row.blurred %}Locked role{% else %}{{ job.title }}{% endif %}</span>
+          <span class="job-row__title">{{ job.title }}</span>
           <span class="job-row__meta">
-            {% if row.blurred %}
-              {% if free_remaining %}Open to unlock this match{% else %}Subscribe to view company &amp; location{% endif %}
-            {% else %}
-              {% if job.company %}{{ job.company }}{% else %}Company TBA{% endif %}
-              {% if job.location %}<span class="dot">·</span>{{ job.location }}{% endif %}
-            {% endif %}
+            {% if job.company %}{{ job.company }}{% else %}Company TBA{% endif %}
+            {% if job.location %}<span class="dot">·</span>{{ job.location }}{% endif %}
           </span>
         </span>
-        {% if row.blurred %}
-        <span class="badge">Locked</span>
-        {% else %}
         <span class="badge {{ job.status }}">{{ job.status.replace('_', ' ') }}</span>
-        {% endif %}
       </a>
     </li>
     {% endfor %}

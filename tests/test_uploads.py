@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import io
+import zipfile
 from pathlib import Path
 
 import pytest
@@ -29,10 +31,36 @@ def test_validate_upload_content_pdf_magic():
         validate_upload_content("resume.pdf", b"not-a-pdf")
 
 
+def _minimal_docx_bytes() -> bytes:
+    """Build a real (tiny) DOCX package.
+
+    validate_upload_content inspects the ZIP structure to guard against zip
+    bombs and unsafe member paths, so a bare b"PK\\x03\\x04" prefix is not a
+    valid fixture any more — it must be an actual archive containing
+    word/document.xml.
+    """
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("[Content_Types].xml", "<Types/>")
+        archive.writestr("word/document.xml", "<document/>")
+    return buffer.getvalue()
+
+
 def test_validate_upload_content_docx_magic():
-    validate_upload_content("resume.docx", b"PK\x03\x04content")
+    validate_upload_content("resume.docx", _minimal_docx_bytes())
+    # A ZIP-looking prefix that is not a real archive is rejected.
+    with pytest.raises(ValueError, match="valid DOCX"):
+        validate_upload_content("resume.docx", b"PK\x03\x04content")
     with pytest.raises(ValueError, match="valid DOCX"):
         validate_upload_content("resume.docx", b"%PDF-1.4")
+
+
+def test_validate_upload_content_rejects_zip_without_document_xml():
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("[Content_Types].xml", "<Types/>")
+    with pytest.raises(ValueError, match="document payload is missing"):
+        validate_upload_content("resume.docx", buffer.getvalue())
 
 
 def test_read_upload_limited_rejects_oversize(monkeypatch):

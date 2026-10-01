@@ -98,20 +98,43 @@ def _creds_from_spec(spec: ProviderSpec, api_key: str) -> LLMCreds:
 
 
 def platform_creds() -> LLMCreds | None:
-    """Server-owned keys only — OpenAI or Gemini from .env."""
+    """Server-owned keys only — OpenAI, Gemini or Groq from .env."""
+    chain = platform_creds_chain()
+    return chain[0] if chain else None
+
+
+def platform_creds_chain() -> list[LLMCreds]:
+    """Ordered platform providers to try: preferred first, then fallbacks.
+
+    The first entry honours LLM_PROVIDER when set, then the remaining
+    configured platform keys, then LLM_FALLBACK_ORDER (e.g. "openai,groq") so
+    a rate-limited or outage provider does not take AI features down with it.
+    Each provider appears at most once.
+    """
     s = get_settings()
+    ordered: list[ProviderSpec] = []
+    seen: set[str] = set()
+
+    def _add(spec: ProviderSpec | None) -> None:
+        if spec is None or spec.id in seen or not spec.env_key_attr:
+            return
+        if not _settings_key(spec):
+            return
+        seen.add(spec.id)
+        ordered.append(spec)
+
     preferred = (s.llm_provider or "").strip().lower()
-    if preferred in {p.id for p in PLATFORM_PROVIDERS}:
-        spec = get_provider(preferred)
-        if spec:
-            key = _settings_key(spec)
-            if key:
-                return _creds_from_spec(spec, key)
+    if preferred:
+        _add(get_provider(preferred))
+
+    # Any other configured platform key, before the explicit fallback order.
     for spec in PLATFORM_PROVIDERS:
-        key = _settings_key(spec)
-        if key:
-            return _creds_from_spec(spec, key)
-    return None
+        _add(spec)
+
+    for name in (s.llm_fallback_order or "").split(","):
+        _add(get_provider(name.strip().lower()))
+
+    return [_creds_from_spec(spec, _settings_key(spec)) for spec in ordered]
 
 
 def byok_creds(encrypted_key: str, provider: str = "openai") -> LLMCreds | None:
@@ -170,6 +193,17 @@ def _record_request(
         logger.warning("Could not persist LLM telemetry: %s", exc)
 
 
+async def _dispatch(
+    c: LLMCreds, prompt: str, system: str, json_mode: bool, max_tokens: int, temperature: float
+) -> str:
+    """Route one call to the client that matches this provider's API shape."""
+    if c.kind == "anthropic":
+        return await _anthropic(c, prompt, system, max_tokens, temperature, json_mode)
+    if c.kind == "gemini":
+        return await _gemini(c, prompt, system, json_mode, max_tokens, temperature)
+    return await _openai_compatible(c, prompt, system, json_mode, temperature)
+
+
 async def llm_complete(
     *,
     prompt: str,
@@ -180,50 +214,77 @@ async def llm_complete(
     creds: LLMCreds | None = None,
     purpose: str = "unspecified",
     prompt_version: str = DEFAULT_PROMPT_VERSION,
+    allow_fallback: bool = True,
 ) -> str:
-    """Single LLM gateway with safety policy, bounded calls, and privacy-safe telemetry."""
-    c = creds or platform_creds()
-    if not c:
+    """Single LLM gateway with safety policy, bounded calls, and privacy-safe telemetry.
+
+    When no explicit creds are supplied, platform keys are tried in order and a
+    provider failure (outage, rate limit, bad key) transparently falls through to
+    the next one. Set allow_fallback=False to fail on the first error instead.
+    Each attempt is recorded separately so fallbacks stay visible in telemetry.
+    """
+    if creds is not None:
+        chain = [creds]
+    else:
+        chain = platform_creds_chain()
+    if not chain:
         raise RuntimeError(
             "No LLM API key configured. Use platform keys or a BYOK key in Settings."
         )
 
     safe_system = ((system.strip() + "\n\n") if system.strip() else "") + AI_SAFETY_SYSTEM
-    started = time.monotonic()
-    try:
-        if c.kind == "anthropic":
-            result = await _anthropic(c, prompt, safe_system, max_tokens, temperature, json_mode)
-        elif c.kind == "gemini":
-            result = await _gemini(c, prompt, safe_system, json_mode, max_tokens, temperature)
-        else:
-            result = await _openai_compatible(c, prompt, safe_system, json_mode, temperature)
-    except Exception as exc:
+    input_chars = len(prompt) + len(safe_system)
+    last_exc: Exception | None = None
+
+    for index, c in enumerate(chain):
+        is_last = index == len(chain) - 1
+        started = time.monotonic()
+        try:
+            result = await _dispatch(
+                c, prompt, safe_system, json_mode, max_tokens, temperature
+            )
+        except Exception as exc:
+            last_exc = exc
+            await asyncio.to_thread(
+                _record_request,
+                provider=c.provider,
+                model=c.model,
+                purpose=purpose,
+                prompt_version=prompt_version,
+                status="error",
+                latency_ms=int((time.monotonic() - started) * 1000),
+                input_chars=input_chars,
+                output_chars=0,
+                error_type=type(exc).__name__,
+            )
+            # Only fall through when another provider is left to try.
+            if is_last or not allow_fallback:
+                raise
+            nxt = chain[index + 1]
+            logger.warning(
+                "LLM provider %s failed (%s: %s); falling back to %s",
+                c.provider,
+                type(exc).__name__,
+                exc,
+                nxt.provider,
+            )
+            continue
+
         await asyncio.to_thread(
             _record_request,
             provider=c.provider,
             model=c.model,
             purpose=purpose,
             prompt_version=prompt_version,
-            status="error",
+            status="success",
             latency_ms=int((time.monotonic() - started) * 1000),
-            input_chars=len(prompt) + len(safe_system),
-            output_chars=0,
-            error_type=type(exc).__name__,
+            input_chars=input_chars,
+            output_chars=len(result),
         )
-        raise
+        return result
 
-    await asyncio.to_thread(
-        _record_request,
-        provider=c.provider,
-        model=c.model,
-        purpose=purpose,
-        prompt_version=prompt_version,
-        status="success",
-        latency_ms=int((time.monotonic() - started) * 1000),
-        input_chars=len(prompt) + len(safe_system),
-        output_chars=len(result),
-    )
-    return result
+    # Unreachable: the loop either returns or raises.
+    raise last_exc or RuntimeError("LLM call failed with no provider available")
 
 
 async def _openai_compatible(

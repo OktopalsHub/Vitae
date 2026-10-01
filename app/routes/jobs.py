@@ -14,7 +14,7 @@ from app.generator import apply_assist_payload, rewrite_answer_in_draft
 from app.config import project_path
 from app.db import get_db
 from app.matching.scorer import reasons_from_json, score_job_detail
-from app.models import JobListing, JobStatus, ListingVisibility, User
+from app.models import JobListing, JobStatus, User
 from app.services import (
     add_pasted_job_for_user,
     get_user_job_card_by_public_id,
@@ -32,16 +32,12 @@ from app.accounts import (
     can_open_listing,
     can_use_ai,
     detect_billing_region_detail,
-    free_opens_remaining,
-    free_unlocked_listing_ids,
     get_active_profile,
-    has_full_job_access,
     llm_creds_for_user,
     load_apply_draft_db,
     load_user_profile_dict,
     load_user_settings,
     save_apply_draft_db,
-    FREE_CLEAR_MATCHES,
 )
 from app.rate_limit import enforce
 from app.workers.queue import enqueue_job
@@ -115,7 +111,7 @@ def home(
             db,
             region=region,
             region_source=region_source,
-            free_clear=FREE_CLEAR_MATCHES,
+            free_clear=0,
             prices={
                 "byok": "₦2,000" if is_ng else "$5",
                 "platform": "₦5,000" if is_ng else "$10",
@@ -174,24 +170,9 @@ def jobs_board(
 
     total_pages = max(1, ceil(total / JOBS_PAGE_SIZE) if total else 1)
     page_num = min(page, total_pages)
-    full_access = has_full_job_access(db, user)
-    unlocked_ids = set() if full_access else free_unlocked_listing_ids(db, user)
-    free_remaining = 0 if full_access else free_opens_remaining(db, user)
-    free_used = 0 if full_access else len(unlocked_ids)
 
-    job_rows = []
-    for card in cards:
-        lid = int(card.id)
-        is_private_own = (
-            card.visibility == ListingVisibility.PRIVATE.value
-            and card.listing.owner_user_id == user.id
-        )
-        blurred = not (full_access or is_private_own or lid in unlocked_ids)
-        openable = full_access or lid in unlocked_ids or is_private_own or (
-            card.visibility == ListingVisibility.PUBLIC.value
-            and len(unlocked_ids) < FREE_CLEAR_MATCHES
-        )
-        job_rows.append({"card": card, "blurred": blurred, "openable": openable, "unlocked": full_access or lid in unlocked_ids})
+    # Every listing is visible and open — no blur, no unlock quota.
+    job_rows = [{"card": card, "blurred": False, "openable": True, "unlocked": True} for card in cards]
 
     status_counts = {s.value: 0 for s in JobStatus}
     if cards:
@@ -218,9 +199,9 @@ def jobs_board(
             request, user, db,
             jobs=job_rows, status_counts=status_counts, status=status_norm,
             min_score=threshold, q=q, pager=pager, ai_ok=ai_ok, ai_reason=ai_reason,
-            suggest_min=suggest_min, full_access=full_access, free_clear=FREE_CLEAR_MATCHES,
-            free_remaining=free_remaining, free_used=free_used,
-            locked_count=0 if full_access else max(0, total - free_used),
+            suggest_min=suggest_min, full_access=True, free_clear=0,
+            free_remaining=0, free_used=0,
+            locked_count=0,
             has_matches=bool(total), profile_ready=True, cache_ready=cache_ready,
             location=location, remote_type=remote_type,
             employment_type=employment_type, experience_level=experience_level,

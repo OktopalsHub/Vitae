@@ -66,7 +66,7 @@ Open http://127.0.0.1:8765. For production (FastAPI Cloud), set `APP_ENV=product
 
 After launching the app, the workflow looks like this:
 
-1. **Register or sign in** via email, Google, or GitHub.
+1. **Register or sign in** with your email and password.
 2. **Upload your CV** (PDF or DOCX) during onboarding. The app parses your skills, experience, and education automatically.
 3. **Review and confirm** each extracted section. You can edit any field before confirming.
 4. **Browse your matches** on the Jobs board. Every listing is scored against your profile, with a clear breakdown of why you’re a fit.

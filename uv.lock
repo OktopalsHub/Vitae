@@ -416,9 +416,6 @@ wheels = [
 ]
 
 [package.optional-dependencies]
-oauth = [
-    { name = "httpx-oauth" },
-]
 sqlalchemy = [
     { name = "fastapi-users-db-sqlalchemy" },
 ]
@@ -601,18 +598,6 @@ wheels = [
 ]
 
 [[package]]
-name = "httpx-oauth"
-version = "0.17.0"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "httpx" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/7f/91/8b9f58cbf6e8914577183731233e66d3e586f1397b23190f46a929206b96/httpx_oauth-0.17.0.tar.gz", hash = "sha256:d279997ea80e7fc6f713acc8ed0fcc07ec319bae939753a2579d1fb7a753167b", size = 124506 }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/b5/23/db1df57aeb6b96ad6c2c3b84bf45d22fc3293949cee7c506cbd5aa1805a3/httpx_oauth-0.17.0-py3-none-any.whl", hash = "sha256:8098e48dfeb97d0f35a83aa7bfaf18d2e7dcd9f3962f19f60fc0ec939e5d6bd2", size = 38083 },
-]
-
-[[package]]
 name = "idna"
 version = "3.18"
 source = { registry = "https://pypi.org/simple" }
@@ -680,11 +665,10 @@ dependencies = [
     { name = "cryptography" },
     { name = "email-validator" },
     { name = "fastapi", extra = ["standard"] },
-    { name = "fastapi-users", extra = ["oauth", "sqlalchemy"] },
+    { name = "fastapi-users", extra = ["sqlalchemy"] },
     { name = "fpdf2" },
     { name = "google-genai" },
     { name = "httpx" },
-    { name = "httpx-oauth" },
     { name = "jinja2" },
     { name = "lxml" },
     { name = "openai" },
@@ -717,11 +701,10 @@ requires-dist = [
     { name = "cryptography", specifier = ">=43.0.0" },
     { name = "email-validator", specifier = ">=2.2.0" },
     { name = "fastapi", extras = ["standard"], specifier = ">=0.115.0" },
-    { name = "fastapi-users", extras = ["sqlalchemy", "oauth"], specifier = ">=14.0.0" },
+    { name = "fastapi-users", extras = ["sqlalchemy"], specifier = ">=14.0.0" },
     { name = "fpdf2", specifier = ">=2.8.1" },
     { name = "google-genai", specifier = ">=1.0.0" },
     { name = "httpx", specifier = ">=0.27.2" },
-    { name = "httpx-oauth", specifier = ">=0.15.0" },
     { name = "jinja2", specifier = ">=3.1.4,<3.1.6" },
     { name = "lxml", specifier = ">=5.3.0" },
     { name = "openai", specifier = ">=1.54.0" },

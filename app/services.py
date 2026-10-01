@@ -35,7 +35,8 @@ from app.models import (
     UserJob,
 )
 from app.sources.base import RawJob
-from app.sources.fetchers import dedupe_raw_jobs, ingest_pasted_job
+from app.sources.paste import ingest_pasted_job
+from app.sources.utils import dedupe_raw_jobs
 from app.sources.orchestrator import iter_fetch_source_results
 from app.accounts import (
     ensure_account,

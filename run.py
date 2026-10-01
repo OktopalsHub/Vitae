@@ -12,6 +12,9 @@ def main() -> None:
         host=settings.app_host,
         port=settings.app_port,
         reload=True,
+        # Windows: uvicorn would otherwise use ProactorEventLoop, which psycopg's
+        # async driver rejects. See app.main.selector_loop_factory.
+        loop="app.main:selector_loop_factory",
     )
 
 

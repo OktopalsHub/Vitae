@@ -23,13 +23,19 @@ os.environ["TRUST_EDGE_GEO"] = "0"
 
 from fastapi.testclient import TestClient  # noqa: E402
 
-from app.config import get_settings  # noqa: E402
+from app.config import Settings, get_settings  # noqa: E402
 from app.csrf import CSRF_COOKIE  # noqa: E402
 from app.db import SessionLocal, engine  # noqa: E402
 from app.models import Base  # noqa: E402
 from app.main import app  # noqa: E402
 from app.models import User  # noqa: E402
 from app.accounts import ensure_account, get_active_profile  # noqa: E402
+
+# Never let the developer's real .env leak into the suite. Settings falls back to
+# that file for any key missing from os.environ, so tests that intentionally unset
+# a variable (e.g. FERNET_SECRET_KEY) would silently read the production secret
+# instead of an empty value.
+Settings.model_config["env_file"] = None
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -51,6 +57,27 @@ def db_session():
     try:
         yield db
     finally:
+        db.close()
+
+
+@pytest.fixture(autouse=True)
+def _clean_worker_jobs():
+    """Keep the shared session-scoped database from leaking worker jobs.
+
+    The test database is created once per session, so a WorkerJob enqueued by
+    one test stays QUEUED and is then claimed by tests/test_workers.py, which
+    assert on their own job id. Clear the queue around every test so worker
+    tests only ever observe jobs they created themselves.
+    """
+    from app.models import WorkerJob
+
+    db = SessionLocal()
+    try:
+        db.query(WorkerJob).delete()
+        db.commit()
+        yield
+    finally:
+        db.rollback()
         db.close()
 
 

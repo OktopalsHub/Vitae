@@ -3,8 +3,33 @@ from __future__ import annotations
 import asyncio
 import os
 import secrets
+import sys
 from contextlib import asynccontextmanager
 from urllib.parse import quote
+
+# psycopg's async driver cannot run on Windows' default ProactorEventLoop and
+# raises InterfaceError on the first query. Select the selector-based loop
+# before any async engine is created. This module is imported by uvicorn before
+# the server creates its loop, so setting it here covers `python run.py`,
+# `uvicorn app.main:app`, and the test client alike. No-op off Windows.
+if sys.platform == "win32":
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+
+
+def selector_loop_factory() -> asyncio.AbstractEventLoop:
+    """Event loop factory for servers that bypass the loop policy.
+
+    uvicorn >= 0.36 builds its loop via an explicit ``loop_factory`` that returns
+    ``ProactorEventLoop`` on Windows, so the policy set above is not consulted
+    and every async psycopg query fails with InterfaceError. Passing this
+    factory to uvicorn (``--loop app.main:selector_loop_factory`` or
+    ``uvicorn.run(..., loop=...)``) keeps psycopg usable on Windows. Off
+    Windows the default selector loop is already correct.
+    """
+    if sys.platform == "win32":
+        return asyncio.SelectorEventLoop()
+    return asyncio.new_event_loop()
+
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, PlainTextResponse, RedirectResponse
@@ -20,11 +45,9 @@ from app.auth import (
     UserUpdate,
     auth_backend,
     fastapi_users,
-    github_oauth_client,
-    google_oauth_client,
 )
 from app.config import assert_secure_settings, ensure_dirs, get_settings, project_path, warn_site_settings
-from app.csrf import CSRFMiddleware, cookie_secure_flag
+from app.csrf import CSRFMiddleware
 from app.db import assert_database_migrated
 from app.rate_limit import RateLimitExceeded, enforce
 from app.routes import auto_apply, admin, applications, auth_pages, billing, jobs, onboarding, profiles, settings, site
@@ -123,9 +146,6 @@ static_dir = project_path("app", "static")
 static_dir.mkdir(exist_ok=True)
 app.mount("/static", CachedStaticFiles(directory=str(static_dir)), name="static")
 
-settings_cfg = _settings
-_oauth_cookie_secure = cookie_secure_flag()
-
 app.include_router(
     fastapi_users.get_auth_router(auth_backend, requires_verification=False),
     prefix="/auth",
@@ -141,59 +161,6 @@ app.include_router(
     prefix="/users",
     tags=["users"],
 )
-
-if google_oauth_client:
-    app.include_router(
-        fastapi_users.get_oauth_router(
-            google_oauth_client,
-            auth_backend,
-            settings_cfg.secret_key,
-            associate_by_email=False,
-            is_verified_by_default=True,
-            redirect_url=f"{settings_cfg.oauth_redirect_base.rstrip('/')}/auth/google/callback",
-            csrf_token_cookie_secure=_oauth_cookie_secure,
-        ),
-        prefix="/auth/google",
-        tags=["auth"],
-    )
-else:
-
-    @app.get("/auth/google/authorize")
-    def google_oauth_unconfigured():
-        return RedirectResponse(
-            url=(
-                "/login?error="
-                + quote("Google sign-in is not configured. Add GOOGLE_OAUTH_CLIENT_ID and GOOGLE_OAUTH_CLIENT_SECRET.")
-            ),
-            status_code=303,
-        )
-
-
-if github_oauth_client:
-    app.include_router(
-        fastapi_users.get_oauth_router(
-            github_oauth_client,
-            auth_backend,
-            settings_cfg.secret_key,
-            associate_by_email=False,
-            is_verified_by_default=True,
-            redirect_url=f"{settings_cfg.oauth_redirect_base.rstrip('/')}/auth/github/callback",
-            csrf_token_cookie_secure=_oauth_cookie_secure,
-        ),
-        prefix="/auth/github",
-        tags=["auth"],
-    )
-else:
-
-    @app.get("/auth/github/authorize")
-    def github_oauth_unconfigured():
-        return RedirectResponse(
-            url=(
-                "/login?error="
-                + quote("GitHub sign-in is not configured. Add GITHUB_OAUTH_CLIENT_ID and GITHUB_OAUTH_CLIENT_SECRET.")
-            ),
-            status_code=303,
-        )
 
 app.include_router(auth_pages.router)
 app.include_router(onboarding.router)

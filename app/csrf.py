@@ -25,8 +25,6 @@ EXEMPT_PREFIXES = (
     "/docs",
     "/redoc",
     "/openapi.json",
-    "/auth/google/",
-    "/auth/github/",
 )
 
 

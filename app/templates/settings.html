@@ -51,7 +51,7 @@
   {% endif %}
 
   <h3 class="rule-title">Platform API key status</h3>
-  <p class="meta">Server keys for the Platform AI plan (OpenAI or Gemini only). Extra providers are user BYOK in the section above.</p>
+  <p class="meta">Server keys for the Platform AI plan (OpenAI, Gemini or Groq). Extra providers are user BYOK in the section above. Providers are tried in order and the next one is used automatically if one fails.</p>
   <div class="keys">
     {% for p in platform_llm_providers %}
     <span class="{% if p.configured %}on{% else %}off{% endif %}">{{ p.label }} {% if p.configured %}configured{% else %}not set{% endif %}</span>
